@@ -216,11 +216,12 @@ main#chart {
 }
 
 .gear-group {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 6px;
-  padding: 8px;
+  padding: 8px 8px 8px 22px;
   margin: 10px 18px;
   border: 1px solid #4a3f25;
   border-radius: 6px;
@@ -228,9 +229,43 @@ main#chart {
   transition: border-color 0.15s, background 0.15s;
 }
 
-.gear-group.drag-over {
-  border-color: var(--gold-bright);
-  background: rgba(217, 179, 76, 0.08);
+/* Grip on the left edge of a group; the only thing that starts a whole-group
+   reorder (icons inside stay independently draggable). */
+.group-drag-handle {
+  position: absolute;
+  left: 3px;
+  top: 4px;
+  bottom: 4px;
+  width: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  color: var(--gold);
+  opacity: 0.4;
+  font-size: 0.85rem;
+  user-select: none;
+  border-radius: 4px;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.group-drag-handle:hover {
+  opacity: 1;
+  background: rgba(217, 179, 76, 0.12);
+}
+
+.group-drag-handle:active { cursor: grabbing; }
+
+.gear-group.group-dragging { opacity: 0.4; }
+
+/* Insertion bar marking where a dragged group will land. */
+.group-ghost {
+  background: var(--gold-bright);
+  border-radius: 3px;
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: 500;
+  box-shadow: 0 0 8px rgba(217, 179, 76, 0.6);
 }
 
 .flow-arrow {
@@ -247,16 +282,11 @@ main#chart {
 }
 
 /* Once a child-reorder gap preview is active, the dragged card's own (faded)
-   placeholder can end up sitting right where a bumped sibling slides into —
-   hide it rather than let the two overlap; the ghost already shows the
+   placeholder can end up sitting right where a bumped sibling slides into,
+   so hide it rather than let the two overlap; the ghost already shows the
    landing slot. */
 .graph-node.drag-source-hidden {
   visibility: hidden;
-}
-
-.graph-node.drag-over {
-  outline: 2px solid var(--gold-bright);
-  outline-offset: 2px;
 }
 
 /* Drag-preview placeholder: shows where the dragged goal will land. Always a
