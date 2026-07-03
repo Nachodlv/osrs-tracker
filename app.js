@@ -183,17 +183,22 @@ function getEffectiveTree() {
     if (!parent && byShared[custom.parentId] && byShared[custom.parentId].length) {
       parent = byShared[custom.parentId][0];
     }
+    // A parentless custom node (created from the empty-space menu) is a
+    // top-level goal; a node whose named parent no longer exists is dropped.
+    if (!parent && custom.parentId) return;
+    const node = {
+      id: custom.id, title: custom.title, type: custom.type || "other", children: [], custom: true,
+      iconUrl: custom.iconUrl, description: custom.description,
+      link: custom.linkDisabled ? null : (custom.link || null),
+      note: custom.linkDisabled ? null : (custom.note || null)
+    };
     if (parent) {
       if (!parent.children) parent.children = [];
-      const node = {
-        id: custom.id, title: custom.title, type: custom.type || "other", children: [], custom: true,
-        iconUrl: custom.iconUrl, description: custom.description,
-        link: custom.linkDisabled ? null : (custom.link || null),
-        note: custom.linkDisabled ? null : (custom.note || null)
-      };
       parent.children.push(node);
-      byId[node.id] = node;
+    } else {
+      clone.push(node);
     }
+    byId[node.id] = node;
   });
 
   return { tree: clone, byId };
@@ -1844,6 +1849,12 @@ function openContextMenu(x, y, node, info) {
   addItem("Open / Edit…", () => openEditGoalModal(node.id));
   addItem("Delete", () => removeGoal(node.id));
 
+  mountContextMenu(menu, x, y);
+}
+
+// Positions a built menu at (x, y), clamped into the viewport, and wires the
+// click-away close.
+function mountContextMenu(menu, x, y) {
   document.body.appendChild(menu);
   const rect = menu.getBoundingClientRect();
   let left = x, top = y;
@@ -1851,13 +1862,32 @@ function openContextMenu(x, y, node, info) {
   if (top + rect.height > window.innerHeight - 8) top = window.innerHeight - rect.height - 8;
   menu.style.left = left + "px";
   menu.style.top = top + "px";
-
   contextMenuEl = menu;
   setTimeout(() => document.addEventListener("click", closeContextMenu, { once: true }), 0);
 }
 
+// Right-clicking empty chart space offers to create a top-level goal.
+function openBackgroundContextMenu(x, y) {
+  closeContextMenu();
+  const menu = document.createElement("div");
+  menu.className = "context-menu";
+  const item = document.createElement("button");
+  item.type = "button";
+  item.className = "context-menu-item";
+  item.textContent = "New goal…";
+  item.addEventListener("click", () => { closeContextMenu(); openAddGoalModal(null); });
+  menu.appendChild(item);
+  mountContextMenu(menu, x, y);
+}
+
 document.addEventListener("contextmenu", e => {
-  if (!e.target.closest(".graph-node")) closeContextMenu();
+  if (e.target.closest(".graph-node")) return; // handled by the card's own contextmenu
+  if (e.target.closest("#chart")) {
+    e.preventDefault();
+    openBackgroundContextMenu(e.clientX, e.clientY);
+  } else {
+    closeContextMenu();
+  }
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeContextMenu(); });
 
@@ -2027,13 +2057,15 @@ function fillGoalFieldsFromNode(node) {
 
 function openAddGoalModal(parentId) {
   goalMode = "add";
-  goalParentId = parentId;
+  goalParentId = parentId || null;
   goalEditId = null;
   resetGoalModalFields();
-  modalTitleEl.textContent = "Add sub-goal";
+  modalTitleEl.textContent = goalParentId ? "Add sub-goal" : "Add goal";
   submitBtn.textContent = "Add";
   deleteBtn.hidden = true;
-  suggestionsEl.hidden = false;
+  // Suggestions link an existing goal in as a prerequisite of the parent, so
+  // they only apply when adding under a parent, not for a top-level goal.
+  suggestionsEl.hidden = !goalParentId;
   modalEl.hidden = false;
   nameInput.focus();
 }
@@ -2073,7 +2105,7 @@ document.addEventListener("keydown", e => {
 });
 
 nameInput.addEventListener("input", () => {
-  if (goalMode !== "add") return;
+  if (goalMode !== "add" || !goalParentId) return; // no prerequisite suggestions for a top-level goal
   const q = nameInput.value.trim().toLowerCase();
   // Clearing the name unlinks; other edits keep the link and will edit the
   // linked goal on submit.
@@ -2108,8 +2140,8 @@ modalForm.addEventListener("submit", e => {
   errorEl.hidden = true;
 
   if (goalMode === "add") {
-    if (!goalParentId) return;
     if (goalLinkedExistingId) {
+      if (!goalParentId) return; // linking a prerequisite needs a parent
       const ok = addLinkedChild(goalParentId, goalLinkedExistingId);
       if (!ok) {
         linkNoticeEl.hidden = true;
@@ -2150,12 +2182,12 @@ deleteBtn.addEventListener("click", () => {
 
 function addCustomChild(parentId, title, opts) {
   const id = uid();
-  state.customNodes[id] = { id, parentId, title, type: opts.type || "other" };
+  state.customNodes[id] = { id, parentId: parentId || null, title, type: opts.type || "other" };
   if (opts.iconQuery) state.customNodes[id].iconQuery = opts.iconQuery;
   if (opts.linkQuery) state.customNodes[id].linkQuery = opts.linkQuery;
   if (opts.description) state.customNodes[id].description = opts.description;
   state.customNodes[id].linkDisabled = !!opts.linkDisabled;
-  state.collapsed[parentId] = false;
+  if (parentId) state.collapsed[parentId] = false;
   saveState();
   render();
   resolveAndStoreIconLink(id, true, opts.type || "other", opts.iconQuery || title, opts.linkDisabled ? null : (opts.linkQuery || title));
