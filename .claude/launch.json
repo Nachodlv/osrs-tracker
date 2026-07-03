@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "iron-tracker-server",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["server.py", "8792"],
+      "port": 8792
+    }
+  ]
+}

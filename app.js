@@ -1,0 +1,2284 @@
+const STORAGE_KEY = "iron-tracker:v1";
+const PROFILES_KEY = "iron-tracker:profiles";
+const DEFAULT_PROFILE_ID = "default";
+
+// --- Profiles -----------------------------------------------------------------
+// Each profile is its own localStorage key holding the same shape of state. A
+// meta record (PROFILES_KEY) tracks which profiles exist and which is active.
+// The "default" profile reuses the original STORAGE_KEY for backwards compat.
+
+function loadProfilesMeta() {
+  try {
+    const raw = localStorage.getItem(PROFILES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.profiles && parsed.profiles[DEFAULT_PROFILE_ID]) return parsed;
+    }
+  } catch (e) {
+    console.error("Failed to load profiles", e);
+  }
+  return { activeId: DEFAULT_PROFILE_ID, profiles: { [DEFAULT_PROFILE_ID]: { name: "Default" } } };
+}
+
+function saveProfilesMeta() {
+  localStorage.setItem(PROFILES_KEY, JSON.stringify(profilesMeta));
+}
+
+function storageKeyFor(profileId) {
+  return profileId === DEFAULT_PROFILE_ID ? STORAGE_KEY : STORAGE_KEY + ":" + profileId;
+}
+
+let profilesMeta = loadProfilesMeta();
+
+// Eagerly migrate every profile's saved data (not just the active one) so no
+// profile's progress goes stale after an id rename — see migration.js.
+(function migrateAllProfilesEagerly() {
+  Object.keys(profilesMeta.profiles).forEach(id => {
+    const key = storageKeyFor(id);
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const migrated = migrateStateData(JSON.parse(raw));
+      const after = JSON.stringify(migrated);
+      if (after !== raw) localStorage.setItem(key, after);
+    } catch (e) {
+      console.error("Failed to migrate profile", id, e);
+    }
+  });
+})();
+
+function defaultState() {
+  return {
+    done: {}, order: {}, customNodes: {}, linkedEdges: {}, removedEdges: {},
+    collapsed: {}, overrides: {}, removed: {}, username: "",
+    // Lazily seeded from GEAR_GROUPS on first render; from then on it's the
+    // user-editable source of truth for tier groupings.
+    groupsState: null
+  };
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(storageKeyFor(profilesMeta.activeId));
+    if (!raw) return defaultState();
+    const parsed = migrateStateData(JSON.parse(raw));
+    return Object.assign(defaultState(), {
+      done: parsed.done || {},
+      order: parsed.order || {},
+      customNodes: parsed.customNodes || {},
+      linkedEdges: parsed.linkedEdges || {},
+      removedEdges: parsed.removedEdges || {},
+      collapsed: parsed.collapsed || {},
+      overrides: parsed.overrides || {},
+      removed: parsed.removed || {},
+      username: parsed.username || "",
+      groupsState: parsed.groupsState || null
+    });
+  } catch (e) {
+    console.error("Failed to load tracker state", e);
+    return defaultState();
+  }
+}
+
+let state = loadState();
+
+function saveState() {
+  localStorage.setItem(storageKeyFor(profilesMeta.activeId), JSON.stringify(state));
+}
+
+function switchProfile(id) {
+  if (!profilesMeta.profiles[id] || id === profilesMeta.activeId) return;
+  profilesMeta.activeId = id;
+  saveProfilesMeta();
+  state = loadState();
+  refreshProfileSelect();
+  render();
+}
+
+function createProfile(name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return;
+  const id = "p" + Date.now();
+  profilesMeta.profiles[id] = { name: trimmed };
+  profilesMeta.activeId = id;
+  saveProfilesMeta();
+  state = loadState();
+  refreshProfileSelect();
+  render();
+}
+
+function renameProfile(id, name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed || !profilesMeta.profiles[id]) return;
+  profilesMeta.profiles[id].name = trimmed;
+  saveProfilesMeta();
+  refreshProfileSelect();
+}
+
+function deleteProfile(id) {
+  if (Object.keys(profilesMeta.profiles).length <= 1) return;
+  localStorage.removeItem(storageKeyFor(id));
+  delete profilesMeta.profiles[id];
+  if (profilesMeta.activeId === id) {
+    profilesMeta.activeId = Object.keys(profilesMeta.profiles)[0];
+    state = loadState();
+  }
+  saveProfilesMeta();
+  refreshProfileSelect();
+  render();
+}
+
+function refreshProfileSelect() {
+  if (!profileSelectEl) return;
+  profileSelectEl.innerHTML = "";
+  Object.keys(profilesMeta.profiles).forEach(id => {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = profilesMeta.profiles[id].name;
+    if (id === profilesMeta.activeId) opt.selected = true;
+    profileSelectEl.appendChild(opt);
+  });
+  if (profileDeleteBtnEl) profileDeleteBtnEl.disabled = Object.keys(profilesMeta.profiles).length <= 1;
+}
+
+function showToast(msg) {
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// Nodes sharing a `shared` key store their completion under that one key, so
+// checking it anywhere checks it everywhere.
+function effectiveId(node) {
+  return node.shared || node.id;
+}
+
+function uid() {
+  return "custom-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+}
+
+// Merge user-added custom nodes into the static data tree (by parent id, which
+// may be a raw node id or a `shared` key).
+function getEffectiveTree() {
+  const clone = JSON.parse(JSON.stringify(GOAL_DATA));
+  const byId = {};
+  const byShared = {};
+  function index(nodes) {
+    nodes.forEach(n => {
+      byId[n.id] = n;
+      if (n.shared) {
+        if (!byShared[n.shared]) byShared[n.shared] = [];
+        byShared[n.shared].push(n);
+      }
+      if (!n.children) n.children = [];
+      index(n.children);
+    });
+  }
+  index(clone);
+
+  Object.values(state.customNodes).forEach(custom => {
+    let parent = byId[custom.parentId];
+    if (!parent && byShared[custom.parentId] && byShared[custom.parentId].length) {
+      parent = byShared[custom.parentId][0];
+    }
+    if (parent) {
+      if (!parent.children) parent.children = [];
+      const node = {
+        id: custom.id, title: custom.title, type: custom.type || "other", children: [], custom: true,
+        iconUrl: custom.iconUrl, description: custom.description,
+        link: custom.linkDisabled ? null : (custom.link || null),
+        note: custom.linkDisabled ? null : (custom.note || null)
+      };
+      parent.children.push(node);
+      byId[node.id] = node;
+    }
+  });
+
+  return { tree: clone, byId };
+}
+
+// --- Graph construction -----------------------------------------------------
+// Collapses the tree into a DAG keyed by effectiveId, so a shared requirement
+// becomes a single node with multiple parents. User-drawn link edges
+// (state.linkedEdges) are folded in; user-detached edges (state.removedEdges)
+// are stripped. Built-in goals can be renamed via state.overrides or hidden via
+// state.removed.
+
+function buildGraph(tree) {
+  const nodes = {};
+  const discoveryOrder = {};
+  let counter = 0;
+  const originalRootIds = new Set(tree.map(effectiveId));
+
+  function ensure(raw) {
+    const id = effectiveId(raw);
+    if (!nodes[id]) {
+      const ov = state.overrides[id];
+      const effectiveType = (ov && ov.type) || raw.type;
+      nodes[id] = {
+        id, title: raw.title, type: effectiveType, link: raw.link, note: raw.note,
+        shared: raw.shared, custom: raw.custom, icon: raw.icon, iconUrl: raw.iconUrl,
+        description: raw.description, childIds: [], parentIds: []
+      };
+      const defaultLink = typeof resolveDefaultLink === "function"
+        ? resolveDefaultLink({ type: effectiveType, title: (ov && ov.title) || raw.title, link: raw.link })
+        : null;
+      if (defaultLink) {
+        nodes[id].link = defaultLink.link;
+        nodes[id].note = defaultLink.note;
+      }
+      if (ov) {
+        if (ov.title) nodes[id].title = ov.title;
+        if (ov.iconUrl) nodes[id].iconUrl = ov.iconUrl;
+        if (ov.description !== undefined) nodes[id].description = ov.description;
+        if (ov.linkDisabled) { nodes[id].link = null; nodes[id].note = null; }
+        else if (ov.link) { nodes[id].link = ov.link; nodes[id].note = null; }
+      }
+    }
+    if (discoveryOrder[id] == null) discoveryOrder[id] = counter++;
+    return nodes[id];
+  }
+
+  function addEdge(parentRecord, childId) {
+    if (!parentRecord.childIds.includes(childId)) parentRecord.childIds.push(childId);
+    const child = nodes[childId];
+    if (child && !child.parentIds.includes(parentRecord.id)) child.parentIds.push(parentRecord.id);
+  }
+
+  function walk(raw, parentId) {
+    const n = ensure(raw);
+    if (parentId && !n.parentIds.includes(parentId)) n.parentIds.push(parentId);
+    (raw.children || []).forEach(child => {
+      const cid = effectiveId(child);
+      if (!n.childIds.includes(cid)) n.childIds.push(cid);
+      walk(child, n.id);
+    });
+  }
+
+  tree.forEach(root => walk(root, null));
+
+  // Strip user-detached edges (edge retargeting) before folding link edges, so
+  // re-linking the same pair later still works.
+  Object.keys(state.removedEdges || {}).forEach(parentId => {
+    const parent = nodes[parentId];
+    if (!parent) return;
+    (state.removedEdges[parentId] || []).forEach(childId => {
+      parent.childIds = parent.childIds.filter(x => x !== childId);
+      if (nodes[childId]) {
+        nodes[childId].parentIds = nodes[childId].parentIds.filter(x => x !== parentId);
+      }
+    });
+  });
+
+  // Fold in manually linked edges, guarding against cycles.
+  Object.keys(state.linkedEdges).forEach(parentId => {
+    const parent = nodes[parentId];
+    if (!parent) return;
+    (state.linkedEdges[parentId] || []).forEach(childId => {
+      if (!nodes[childId]) return;
+      if (childId === parentId) return;
+      if (isAncestor(childId, parentId, nodes)) return;
+      addEdge(parent, childId);
+    });
+  });
+
+  pruneRemoved(nodes, originalRootIds);
+
+  return { nodes, discoveryOrder };
+}
+
+// Deletes user-removed nodes, strips dangling edges, then repeatedly drops nodes
+// left with zero parents (that weren't original top-level goals) — removing a
+// goal also removes sub-goals that only existed to feed it, while a shared
+// requirement used elsewhere survives.
+function pruneRemoved(nodes, originalRootIds) {
+  Object.keys(state.removed).forEach(id => {
+    if (state.removed[id]) delete nodes[id];
+  });
+
+  function stripDangling() {
+    Object.values(nodes).forEach(n => {
+      n.childIds = n.childIds.filter(cid => nodes[cid]);
+      n.parentIds = n.parentIds.filter(pid => nodes[pid]);
+    });
+  }
+  stripDangling();
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    Object.keys(nodes).forEach(id => {
+      if (originalRootIds.has(id)) return;
+      const n = nodes[id];
+      if (n && n.parentIds.length === 0) {
+        delete nodes[id];
+        changed = true;
+      }
+    });
+    if (changed) stripDangling();
+  }
+}
+
+// Is `candidateId` an ancestor of `id`? Used to reject edges that would create a cycle.
+function isAncestor(candidateId, id, nodes, seen) {
+  seen = seen || new Set();
+  if (seen.has(id)) return false;
+  seen.add(id);
+  const n = nodes[id];
+  if (!n) return false;
+  if (n.parentIds.includes(candidateId)) return true;
+  return n.parentIds.some(pid => isAncestor(candidateId, pid, nodes, seen));
+}
+
+// column(node) = 0 for leaves, else 1 + max(column of children).
+function computeColumns(nodes) {
+  const memo = {};
+  function col(id) {
+    if (memo[id] != null) return memo[id];
+    memo[id] = 0; // cycle guard
+    const n = nodes[id];
+    if (!n.childIds.length) { memo[id] = 0; return 0; }
+    const c = 1 + Math.max(...n.childIds.map(col));
+    memo[id] = c;
+    return c;
+  }
+  Object.keys(nodes).forEach(col);
+  return memo;
+}
+
+function effectiveOrder(id, discoveryOrder) {
+  return state.order[id] != null ? state.order[id] : discoveryOrder[id];
+}
+
+// Layered (Sugiyama-style) row assignment. Leaves are ordered by the user's
+// manual order (falling back to discovery order). Later columns place nodes
+// near the average row of their children — unless the user has manually
+// reordered that column, in which case manual order wins (this is what makes
+// reordering non-leaf goals like quests-with-prerequisites actually work).
+function computeRows(nodes, columns, discoveryOrder) {
+  const rows = {};
+  const columnOrder = {};
+  const maxCol = Math.max(0, ...Object.values(columns));
+  for (let c = 0; c <= maxCol; c++) {
+    const ids = Object.keys(nodes).filter(id => columns[id] === c);
+    if (c === 0) {
+      ids.sort((a, b) => effectiveOrder(a, discoveryOrder) - effectiveOrder(b, discoveryOrder));
+      ids.forEach((id, i) => { rows[id] = i; });
+      columnOrder[c] = ids;
+      continue;
+    }
+    const desired = {};
+    ids.forEach(id => {
+      const childRows = nodes[id].childIds.map(cid => rows[cid]).filter(r => r != null);
+      desired[id] = childRows.length
+        ? childRows.reduce((a, b) => a + b, 0) / childRows.length
+        : effectiveOrder(id, discoveryOrder);
+    });
+    ids.sort((a, b) => {
+      const ma = state.order[a], mb = state.order[b];
+      if (ma != null && mb != null) return ma - mb || desired[a] - desired[b];
+      return desired[a] - desired[b] || effectiveOrder(a, discoveryOrder) - effectiveOrder(b, discoveryOrder);
+    });
+    // state.order only decides the sequence (via the sort above); the row
+    // number itself still snaps toward the child average so parents stay
+    // level with their children instead of packing into bare consecutive rows.
+    let nextRow = 0;
+    ids.forEach(id => {
+      const r = Math.max(nextRow, Math.round(desired[id]));
+      rows[id] = r;
+      nextRow = r + 1;
+    });
+    columnOrder[c] = ids;
+  }
+  return { rows, columnOrder };
+}
+
+// A node's subtree defaults to collapsed/compact until explicitly expanded —
+// state.collapsed[id] === false means "explicitly expanded".
+function isExpandedState(id) {
+  return state.collapsed[id] === false;
+}
+
+// A node is visible if it's a root or has at least one visible, expanded parent.
+function computeVisibility(nodes) {
+  const vis = {};
+  function isVis(id) {
+    if (vis[id] != null) return vis[id];
+    vis[id] = true; // cycle guard
+    const n = nodes[id];
+    if (!n.parentIds.length) { vis[id] = true; return true; }
+    const v = n.parentIds.some(pid => isVis(pid) && isExpandedState(pid));
+    vis[id] = v;
+    return v;
+  }
+  Object.keys(nodes).forEach(isVis);
+  return vis;
+}
+
+// --- Status model ------------------------------------------------------------
+// Two states: todo or done (state.done). A parent only reaches "done" once
+// manually ticked, gated by isUnlocked.
+
+// A skill goal with a parseable "<level> <Skill>" requirement is tracked
+// automatically from hiscores; compound requirements stay manual.
+function isAutoTrackedSkill(node) {
+  return node.type === "skill" && !!(typeof parseSkillRequirement === "function" && parseSkillRequirement(node.title));
+}
+
+function computeStatus(id, nodes, memo) {
+  if (memo[id]) return memo[id];
+  const s = state.done[id] ? "done" : "todo";
+  memo[id] = s;
+  return s;
+}
+
+// A parent's "done" checkbox only unlocks once every child is done.
+function isUnlocked(id, nodes, statusMemo) {
+  const n = nodes[id];
+  if (!n.childIds.length) return true;
+  return n.childIds.every(cid => computeStatus(cid, nodes, statusMemo) === "done");
+}
+
+function progressOf(id, nodes, memo) {
+  if (memo[id]) return memo[id];
+  const n = nodes[id];
+  if (!n.childIds.length) {
+    const r = { total: 1, completed: state.done[id] ? 1 : 0 };
+    memo[id] = r;
+    return r;
+  }
+  let total = 0, completed = 0;
+  n.childIds.forEach(cid => {
+    const p = progressOf(cid, nodes, memo);
+    total += p.total;
+    completed += p.completed;
+  });
+  const r = { total, completed };
+  memo[id] = r;
+  return r;
+}
+
+// --- Icon rendering ----------------------------------------------------------
+
+// Icon slot for a node: real wiki icon when resolvable, else the type's emoji.
+function renderIcon(node, sizeClass) {
+  const slot = document.createElement("span");
+  slot.className = "icon-slot" + (node.type ? " type-" + node.type : "") + (sizeClass ? " " + sizeClass : "");
+
+  const fallbackEmoji = node.type && TYPE_META[node.type] ? TYPE_META[node.type].icon : "";
+  const fallbackLabel = node.type && TYPE_META[node.type] ? TYPE_META[node.type].label : "";
+  const src = node.iconUrl || (typeof resolveIconFile === "function" && resolveIconFile(node)
+    ? WIKI_ICON_BASE + encodeURIComponent(resolveIconFile(node))
+    : null);
+
+  if (!src) {
+    if (fallbackEmoji) {
+      slot.textContent = fallbackEmoji;
+      slot.title = fallbackLabel;
+    } else {
+      slot.classList.add("icon-slot-empty");
+    }
+    return slot;
+  }
+
+  const img = document.createElement("img");
+  img.src = src;
+  img.alt = fallbackLabel || node.title;
+  img.title = node.title;
+  img.loading = "lazy";
+  img.addEventListener("error", () => {
+    if (fallbackEmoji) {
+      slot.textContent = fallbackEmoji;
+      slot.title = fallbackLabel;
+    } else {
+      slot.classList.add("icon-slot-empty");
+    }
+  }, { once: true });
+  slot.appendChild(img);
+  return slot;
+}
+
+// Wiki icon + page link lookup via the MediaWiki search API. Best-effort —
+// returns nulls on any failure.
+async function fetchWikiInfo(query) {
+  const base = "https://oldschool.runescape.wiki/api.php";
+  const empty = { iconUrl: null, link: null, pageTitle: null };
+  if (!query || !query.trim()) return empty;
+  try {
+    const searchUrl = `${base}?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=1&format=json&origin=*`;
+    const searchJson = await fetch(searchUrl).then(r => r.json());
+    const hit = searchJson && searchJson.query && searchJson.query.search && searchJson.query.search[0];
+    if (!hit) return empty;
+    const link = `https://oldschool.runescape.wiki/w/${encodeURIComponent(hit.title.replace(/ /g, "_"))}`;
+    const imgUrl = `${base}?action=query&titles=${encodeURIComponent(hit.title)}&prop=pageimages&pithumbsize=64&format=json&origin=*`;
+    const imgJson = await fetch(imgUrl).then(r => r.json());
+    const pages = imgJson && imgJson.query && imgJson.query.pages;
+    const page = pages && Object.values(pages)[0];
+    const iconUrl = (page && page.thumbnail && page.thumbnail.source) || null;
+    return { iconUrl, link, pageTitle: hit.title };
+  } catch (e) {
+    console.warn("Wiki lookup failed for", query, e);
+    return empty;
+  }
+}
+
+function debounce(fn, delay) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), delay);
+  };
+}
+
+// --- Graph rendering ---------------------------------------------------------
+
+const chartEl = document.getElementById("chart");
+const searchEl = document.getElementById("search");
+
+const IS_MOBILE = window.innerWidth < 700;
+const NODE_W = IS_MOBILE ? 160 : 210, NODE_H = IS_MOBILE ? 88 : 96;
+const GAP_X = IS_MOBILE ? 50 : 70, GAP_Y = IS_MOBILE ? 16 : 20, PAD = 20;
+const COL_W = NODE_W + GAP_X, ROW_H = NODE_H + GAP_Y;
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+let currentNodes = {};
+let lastColumns = {}, lastRows = {}, lastVisibleIds = [], lastDiscoveryOrder = {}, lastRootOrder = [], lastNodeBlock = {};
+let hideCompleted = false, hideIncomplete = false;
+
+function getGraph() {
+  const { tree } = getEffectiveTree();
+  return buildGraph(tree);
+}
+
+// renderUnsafe() builds everything off-screen and swaps it in at the end; this
+// wrapper keeps the last good render on screen if anything throws.
+function render() {
+  try {
+    renderUnsafe();
+  } catch (e) {
+    console.error("Render failed — keeping the previous view instead of going blank:", e);
+  }
+}
+
+function renderUnsafe() {
+  const { nodes, discoveryOrder } = getGraph();
+  currentNodes = nodes;
+  lastDiscoveryOrder = discoveryOrder;
+
+  const rsnEl = document.getElementById("rsnInput");
+  if (rsnEl && document.activeElement !== rsnEl) rsnEl.value = state.username || "";
+
+  const visibility = computeVisibility(nodes);
+  const visibleIds = Object.keys(nodes).filter(id => visibility[id]);
+  lastVisibleIds = visibleIds;
+
+  const progressMemo = {};
+  const statusMemo = {};
+  const mergedColumns = {};
+  const mergedRows = {};
+  const nodeBlock = {};
+
+  // Every root goal flows together in one wrapping row: collapsed/childless
+  // roots are a single small card; expanded ones render their local dependency
+  // tree inline, right where that root sits among its siblings.
+  let rootIds = visibleIds.filter(id => nodes[id].parentIds.length === 0);
+  if (hideCompleted || hideIncomplete) {
+    rootIds = rootIds.filter(id => {
+      const p = progressOf(id, nodes, progressMemo);
+      const isDone = p.total > 0 && p.completed === p.total;
+      if (hideCompleted && isDone) return false;
+      if (hideIncomplete && !isDone) return false;
+      return true;
+    });
+  }
+  const rootIdSet = new Set(rootIds);
+
+  function renderRoot(rootId, container) {
+    const rootNode = nodes[rootId];
+    const isExpanded = rootNode.childIds.length > 0 && isExpandedState(rootId);
+
+    if (!isExpanded) {
+      const el = renderGraphNode(rootNode, progressMemo, statusMemo, { compact: true });
+      el.classList.add("grid-mode");
+      container.appendChild(el);
+      return;
+    }
+
+    // This root's own local subtree, scoped so collapsing a branch re-packs
+    // only this block.
+    const sub = {};
+    (function visit(id) {
+      if (sub[id]) return;
+      sub[id] = Object.assign({}, nodes[id], {
+        childIds: nodes[id].childIds.filter(cid => visibility[cid])
+      });
+      nodes[id].childIds.forEach(cid => { if (visibility[cid]) visit(cid); });
+    })(rootId);
+    const subIds = Object.keys(sub);
+
+    const columns = computeColumns(sub);
+    const { rows } = computeRows(sub, columns, discoveryOrder);
+    subIds.forEach(id => {
+      mergedColumns[id] = columns[id];
+      mergedRows[id] = rows[id];
+      nodeBlock[id] = rootId;
+    });
+
+    const maxCol = Math.max(0, ...subIds.map(id => columns[id]));
+    const maxRow = Math.max(0, ...subIds.map(id => rows[id]));
+    const width = (maxCol + 1) * COL_W + PAD * 2;
+    const height = (maxRow + 1) * ROW_H + PAD * 2;
+
+    const blockEl = document.createElement("div");
+    blockEl.className = "chain-canvas";
+    blockEl.style.width = width + "px";
+    blockEl.style.height = height + "px";
+
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.classList.add("edge-layer");
+    svg.setAttribute("width", width);
+    svg.setAttribute("height", height);
+    svg.innerHTML =
+      '<defs><marker id="arrowhead" viewBox="0 0 10 10" refX="8" refY="5" ' +
+      'markerWidth="7" markerHeight="7" orient="auto-start-reverse">' +
+      '<path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>';
+
+    const center = id => ({
+      cx: columns[id] * COL_W + PAD,
+      cy: rows[id] * ROW_H + PAD + NODE_H / 2
+    });
+
+    subIds.forEach(id => {
+      sub[id].childIds.forEach(cid => {
+        const from = center(cid);
+        const to = center(id);
+        const x1 = from.cx + NODE_W, y1 = from.cy;
+        const x2 = to.cx, y2 = to.cy;
+        const dx = Math.max(40, (x2 - x1) / 2);
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`);
+        path.setAttribute("class", "edge");
+        path.setAttribute("marker-end", "url(#arrowhead)");
+        path.dataset.from = cid;
+        path.dataset.to = id;
+        svg.appendChild(path);
+
+        // Drag handle at the parent end of the edge: drag it onto another node
+        // to move this child under that node instead.
+        const handle = document.createElementNS(SVG_NS, "circle");
+        handle.setAttribute("cx", x2 - 6);
+        handle.setAttribute("cy", y2);
+        handle.setAttribute("r", 7);
+        handle.setAttribute("class", "edge-handle");
+        handle.addEventListener("pointerdown", e => startEdgeRetarget(e, cid, id, svg, handle, x1, y1));
+        svg.appendChild(handle);
+      });
+    });
+    blockEl.appendChild(svg);
+
+    subIds.forEach(id => {
+      const node = nodes[id];
+      const { cx, cy } = center(id);
+      const el = renderGraphNode(node, progressMemo, statusMemo);
+      el.style.left = cx + "px";
+      el.style.top = (cy - NODE_H / 2) + "px";
+      blockEl.appendChild(el);
+    });
+
+    container.appendChild(blockEl);
+  }
+
+  // Ungrouped goals keep the free-flowing, reorderable order at the start;
+  // grouped goals render clustered into their tier's box, in group order.
+  ensureGroupsState();
+  const groupedIdSet = new Set();
+  state.groupsState.groupOrder.forEach(gid => (state.groupsState.groups[gid] || []).forEach(id => groupedIdSet.add(id)));
+
+  const ungroupedRoots = rootIds.filter(id => !groupedIdSet.has(id));
+  ungroupedRoots.sort((a, b) => effectiveOrder(a, discoveryOrder) - effectiveOrder(b, discoveryOrder));
+  lastRootOrder = ungroupedRoots;
+
+  const flowEl = document.createElement("div");
+  flowEl.className = "flow-area";
+  flowEl.addEventListener("dragover", e => {
+    e.preventDefault();
+    if (dragSourceRootId) appendRootGhost(flowEl);
+  });
+  flowEl.addEventListener("drop", e => {
+    if (e.target !== flowEl) return; // only true background drops
+    e.preventDefault();
+    clearDragPreview();
+    handleDropOnBackground(dragSourceRootId);
+  });
+
+  ungroupedRoots.forEach(rootId => renderRoot(rootId, flowEl));
+
+  const visibleGroupIds = state.groupsState.groupOrder.filter(gid =>
+    (state.groupsState.groups[gid] || []).some(id => rootIdSet.has(id)));
+
+  visibleGroupIds.forEach((gid, i) => {
+    const visibleMembers = state.groupsState.groups[gid].filter(id => rootIdSet.has(id));
+    const groupEl = document.createElement("div");
+    groupEl.className = "gear-group";
+    groupEl.dataset.groupId = gid;
+    // Guarded on dragSourceRootId: a root drag is the only thing this
+    // container should intercept. Stopping propagation unconditionally here
+    // would (and did) swallow child-reorder drags too — an expanded group
+    // member's whole chain-canvas, with all its child cards, renders as a
+    // descendant of this element, so their dragover/drop bubbles through
+    // here on the way up to the document-level child-reorder listener.
+    groupEl.addEventListener("dragover", e => {
+      if (!dragSourceRootId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      appendRootGhost(groupEl);
+    });
+    groupEl.addEventListener("dragenter", e => {
+      if (!dragSourceRootId) return;
+      e.preventDefault();
+      groupEl.classList.add("drag-over");
+    });
+    groupEl.addEventListener("dragleave", e => { if (e.target === groupEl) groupEl.classList.remove("drag-over"); });
+    groupEl.addEventListener("drop", e => {
+      if (!dragSourceRootId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      groupEl.classList.remove("drag-over");
+      clearDragPreview();
+      handleDropOnGroup(dragSourceRootId, gid);
+    });
+    visibleMembers.forEach(id => renderRoot(id, groupEl));
+    flowEl.appendChild(groupEl);
+
+    if (i < visibleGroupIds.length - 1) {
+      const arrow = document.createElement("span");
+      arrow.className = "flow-arrow";
+      arrow.textContent = "→";
+      flowEl.appendChild(arrow);
+    }
+  });
+
+  chartEl.innerHTML = "";
+  chartEl.appendChild(flowEl);
+  lastColumns = mergedColumns;
+  lastRows = mergedRows;
+  lastNodeBlock = nodeBlock;
+
+  applyFilter();
+  updateOverallProgress(nodes);
+}
+
+function updateOverallProgress(nodes) {
+  const leafIds = Object.keys(nodes).filter(id => nodes[id].childIds.length === 0);
+  const total = leafIds.length;
+  const completed = leafIds.filter(id => state.done[id]).length;
+  const pct = total === 0 ? 0 : Math.round((completed / total) * 100);
+  document.getElementById("overallFill").style.width = pct + "%";
+  document.getElementById("overallLabel").textContent = `${completed} / ${total} (${pct}%)`;
+}
+
+// Expanding opens the whole subtree; collapsing only affects that one node.
+function expandSubtree(id, nodes, seen) {
+  seen = seen || new Set();
+  if (seen.has(id)) return;
+  seen.add(id);
+  state.collapsed[id] = false;
+  (nodes[id] && nodes[id].childIds || []).forEach(cid => expandSubtree(cid, nodes, seen));
+}
+
+function toggleCollapse(id) {
+  if (isExpandedState(id)) {
+    state.collapsed[id] = true;
+  } else {
+    expandSubtree(id, currentNodes);
+  }
+  saveState();
+  render();
+}
+
+function markDone(id, value) {
+  if (value) {
+    state.done[id] = true;
+  } else {
+    delete state.done[id];
+    cascadeUncheckAncestors(id, currentNodes);
+  }
+  saveState();
+  render();
+}
+
+function renderGraphNode(node, progressMemo, statusMemo, opts) {
+  const compact = !!(opts && opts.compact);
+  const hasChildren = node.childIds.length > 0;
+  const progress = progressOf(node.id, currentNodes, progressMemo);
+  const status = computeStatus(node.id, currentNodes, statusMemo);
+  const unlocked = isUnlocked(node.id, currentNodes, statusMemo);
+  const canToggleDone = !hasChildren || unlocked;
+
+  const div = document.createElement("div");
+  div.className = "graph-node" + (node.type ? " type-" + node.type : "") + " status-" + status;
+  div.dataset.id = node.id;
+  div.dataset.title = node.title.toLowerCase();
+
+  // Left click toggles collapse/expand for a goal with sub-goals; for a leaf it
+  // toggles done/not-done directly. Interactive controls stopPropagation.
+  div.addEventListener("click", () => {
+    if (hasChildren) {
+      toggleCollapse(node.id);
+    } else if (canToggleDone && !isAutoTrackedSkill(node)) {
+      markDone(node.id, status !== "done");
+    }
+  });
+  div.addEventListener("contextmenu", e => {
+    e.preventDefault();
+    openContextMenu(e.clientX, e.clientY, node, { hasChildren, status, unlocked, canToggleDone });
+  });
+  div.addEventListener("mouseenter", () => setRelatedGlow(node.id, true));
+  div.addEventListener("mouseleave", () => setRelatedGlow(node.id, false));
+
+  if (node.parentIds.length === 0) {
+    // Root goals: drag & drop forms/edits/reorders tier groups.
+    div.draggable = true;
+    div.addEventListener("dragstart", e => {
+      dragSourceRootId = node.id;
+      dragSourceChildId = null;
+      e.dataTransfer.effectAllowed = "move";
+      div.classList.add("dragging");
+    });
+    div.addEventListener("dragend", () => { div.classList.remove("dragging"); clearDragPreview(); });
+    div.addEventListener("dragover", e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (dragSourceRootId && dragSourceRootId !== node.id) showRootGhost(e, div);
+    });
+    div.addEventListener("dragenter", e => { e.preventDefault(); div.classList.add("drag-over"); });
+    div.addEventListener("dragleave", () => div.classList.remove("drag-over"));
+    div.addEventListener("drop", e => {
+      e.preventDefault();
+      e.stopPropagation();
+      div.classList.remove("drag-over");
+      clearDragPreview();
+      handleGroupDrop(dragSourceRootId, node.id);
+    });
+  } else if (!compact) {
+    // Child goals: drag & drop reorders among siblings in the same column.
+    // Retargeting is handled by one document-level dragover/drop listener
+    // (registered below) that hit-tests against sibling geometry captured
+    // once at dragstart — not this card's own dragover/dragenter, and not
+    // any live re-query of the DOM. That's what lets the gap-opening preview
+    // physically nudge sibling cards without the shift feeding back into
+    // what's considered "the target" (see captureChildSiblingRects).
+    div.draggable = true;
+    div.addEventListener("dragstart", e => {
+      dragSourceChildId = node.id;
+      dragSourceRootId = null;
+      e.dataTransfer.effectAllowed = "move";
+      div.classList.add("dragging");
+      captureChildSiblingRects(node.id, div);
+    });
+    div.addEventListener("dragend", () => {
+      div.classList.remove("dragging");
+      dragSourceChildId = null;
+      dragChildSiblingRects = null;
+      dragChildCanvas = null;
+      clearDragPreview();
+    });
+  }
+
+  // Compact mode: icon only; every action moves to the right-click menu.
+  if (compact) {
+    div.classList.add("compact-node");
+    div.title = node.title + (hasChildren ? ` (${progress.completed}/${progress.total})` : "");
+    div.appendChild(renderIcon(node, "icon-slot-compact"));
+    if (node.type === "skill") {
+      const req = typeof parseSkillRequirement === "function" ? parseSkillRequirement(node.title) : null;
+      if (req) {
+        const levelBadge = document.createElement("span");
+        levelBadge.className = "compact-level-badge";
+        levelBadge.textContent = req.level;
+        div.appendChild(levelBadge);
+      }
+    }
+    if (status === "done") div.classList.add("compact-done");
+    else if (!canToggleDone) div.classList.add("compact-locked");
+    return div;
+  }
+
+  // A root inside a tier group has a fixed position there; reordering happens
+  // by dragging instead of the up/down buttons.
+  const isGroupedRoot = node.parentIds.length === 0 && getGroupOf(node.id) !== null;
+  if (!isGroupedRoot) {
+    const reorder = document.createElement("div");
+    reorder.className = "reorder-controls";
+    const upBtn = document.createElement("button");
+    upBtn.className = "reorder-btn";
+    upBtn.type = "button";
+    upBtn.textContent = "▲";
+    upBtn.title = "Move up";
+    upBtn.addEventListener("click", e => { e.stopPropagation(); moveNode(node.id, -1); });
+    const downBtn = document.createElement("button");
+    downBtn.className = "reorder-btn";
+    downBtn.type = "button";
+    downBtn.textContent = "▼";
+    downBtn.title = "Move down";
+    downBtn.addEventListener("click", e => { e.stopPropagation(); moveNode(node.id, 1); });
+    reorder.appendChild(upBtn);
+    reorder.appendChild(downBtn);
+    div.appendChild(reorder);
+  }
+
+  const body = document.createElement("div");
+  body.className = "graph-node-body";
+  div.appendChild(body);
+
+  const top = document.createElement("div");
+  top.className = "graph-node-top";
+
+  if (hasChildren) {
+    const toggle = document.createElement("span");
+    toggle.className = "toggle";
+    toggle.textContent = isExpandedState(node.id) ? "▾" : "▸";
+    toggle.addEventListener("click", e => { e.stopPropagation(); toggleCollapse(node.id); });
+    top.appendChild(toggle);
+  }
+
+  top.appendChild(renderIcon(node));
+
+  const controls = document.createElement("div");
+  controls.className = "status-controls";
+
+  if (status === "done") {
+    const doneBtn = document.createElement("button");
+    doneBtn.type = "button";
+    doneBtn.className = "action-btn done-btn";
+    doneBtn.textContent = "✓";
+    doneBtn.title = "Done — click to undo";
+    doneBtn.addEventListener("click", e => { e.stopPropagation(); markDone(node.id, false); });
+    controls.appendChild(doneBtn);
+  } else if (isAutoTrackedSkill(node)) {
+    const autoBtn = document.createElement("button");
+    autoBtn.type = "button";
+    autoBtn.className = "action-btn auto-btn";
+    autoBtn.textContent = "📊";
+    autoBtn.disabled = true;
+    autoBtn.title = "Tracked automatically from your hiscores — sync your username in the toolbar";
+    controls.appendChild(autoBtn);
+  } else if (!canToggleDone) {
+    const lockedBtn = document.createElement("button");
+    lockedBtn.type = "button";
+    lockedBtn.className = "action-btn locked-btn";
+    lockedBtn.textContent = "🔒";
+    lockedBtn.disabled = true;
+    lockedBtn.title = "Locked until all sub-goals are done (" + progress.completed + "/" + progress.total + ")";
+    controls.appendChild(lockedBtn);
+  } else {
+    const checkBtn = document.createElement("button");
+    checkBtn.type = "button";
+    checkBtn.className = "action-btn check-btn";
+    checkBtn.textContent = "✓";
+    checkBtn.title = "Mark done";
+    checkBtn.addEventListener("click", e => { e.stopPropagation(); markDone(node.id, true); });
+    controls.appendChild(checkBtn);
+  }
+  top.appendChild(controls);
+
+  body.appendChild(top);
+
+  const titleEl = document.createElement("div");
+  titleEl.className = "graph-node-title" + (status === "done" ? " done" : "");
+  titleEl.textContent = node.title;
+  titleEl.title = node.title;
+  body.appendChild(titleEl);
+
+  const footer = document.createElement("div");
+  footer.className = "graph-node-footer";
+
+  if (hasChildren) {
+    const prog = document.createElement("span");
+    prog.className = "graph-node-progress";
+    prog.textContent = `${progress.completed}/${progress.total}`;
+    footer.appendChild(prog);
+  }
+
+  if (node.parentIds.length > 1) {
+    const badge = document.createElement("span");
+    badge.className = "shared-badge";
+    badge.textContent = `🔗×${node.parentIds.length}`;
+    badge.title = "Unlocks " + node.parentIds.length + " goals";
+    footer.appendChild(badge);
+  }
+
+  if (node.description) {
+    const descBadge = document.createElement("span");
+    descBadge.className = "desc-badge";
+    descBadge.textContent = "📝";
+    descBadge.title = node.description;
+    footer.appendChild(descBadge);
+  }
+
+  if (node.link) {
+    const a = document.createElement("a");
+    a.className = "graph-node-link";
+    a.href = node.link;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = node.note || "wiki ↗";
+    a.addEventListener("click", e => e.stopPropagation());
+    footer.appendChild(a);
+  }
+
+  const editBtn = document.createElement("button");
+  editBtn.className = "edit-btn";
+  editBtn.type = "button";
+  editBtn.textContent = "✎";
+  editBtn.title = "Edit goal";
+  editBtn.addEventListener("click", e => { e.stopPropagation(); openEditGoalModal(node.id); });
+  footer.appendChild(editBtn);
+
+  const addLink = document.createElement("button");
+  addLink.className = "add-link";
+  addLink.type = "button";
+  addLink.textContent = "+";
+  addLink.title = "Add sub-goal";
+  addLink.addEventListener("click", e => { e.stopPropagation(); openAddGoalModal(node.id); });
+  footer.appendChild(addLink);
+
+  body.appendChild(footer);
+
+  return div;
+}
+
+// Highlights a node's direct parents/children (and the edges between them) while hovered.
+function setRelatedGlow(id, on) {
+  const node = currentNodes[id];
+  if (!node) return;
+  const relatedIds = new Set([...node.parentIds, ...node.childIds]);
+  chartEl.querySelectorAll(".graph-node").forEach(el => {
+    el.classList.toggle("related-glow", on && relatedIds.has(el.dataset.id));
+  });
+  chartEl.querySelectorAll(".edge").forEach(el => {
+    const isRelated = (el.dataset.from === id || el.dataset.to === id);
+    el.classList.toggle("edge-glow", on && isRelated);
+  });
+}
+
+// Unchecking a node breaks the unlock condition above it, so any manually-done
+// ancestor gets un-done too.
+function cascadeUncheckAncestors(id, nodes, visited) {
+  visited = visited || new Set();
+  const n = nodes[id];
+  if (!n) return;
+  n.parentIds.forEach(pid => {
+    if (visited.has(pid)) return;
+    visited.add(pid);
+    if (state.done[pid]) delete state.done[pid];
+    cascadeUncheckAncestors(pid, nodes, visited);
+  });
+}
+
+// --- Tier groups (drag & drop) --------------------------------------------------
+// state.groupsState = { groupOrder: [gid...], groups: { gid: [id...] } }. Lazily
+// seeded from GEAR_GROUPS, then user-editable like any other state.
+function ensureGroupsState() {
+  if (state.groupsState) return;
+  const groupOrder = [];
+  const groups = {};
+  (typeof GEAR_GROUPS !== "undefined" ? GEAR_GROUPS : []).forEach((g, i) => {
+    const members = g.filter(id => currentNodes[id]);
+    if (members.length) {
+      const gid = "g" + i;
+      groups[gid] = members;
+      groupOrder.push(gid);
+    }
+  });
+  state.groupsState = { groupOrder, groups };
+}
+
+function getGroupOf(id) {
+  const gs = state.groupsState;
+  if (!gs) return null;
+  for (const gid of gs.groupOrder) {
+    if (gs.groups[gid] && gs.groups[gid].indexOf(id) !== -1) return gid;
+  }
+  return null;
+}
+
+// A group that drops to one or zero members is dissolved.
+function removeFromGroup(id) {
+  const gid = getGroupOf(id);
+  if (!gid) return;
+  const gs = state.groupsState;
+  gs.groups[gid] = gs.groups[gid].filter(x => x !== id);
+  if (gs.groups[gid].length <= 1) {
+    delete gs.groups[gid];
+    gs.groupOrder = gs.groupOrder.filter(x => x !== gid);
+  }
+}
+
+// Dropping sourceId onto targetId: joins targetId's group (inserted before it),
+// or creates a new group of the two if targetId is ungrouped.
+function handleGroupDrop(sourceId, targetId) {
+  ensureGroupsState();
+  if (!sourceId || sourceId === targetId || !currentNodes[sourceId] || !currentNodes[targetId]) return;
+  const targetGroup = getGroupOf(targetId);
+  removeFromGroup(sourceId);
+  if (targetGroup) {
+    const arr = state.groupsState.groups[targetGroup];
+    const idx = arr.indexOf(targetId);
+    arr.splice(idx, 0, sourceId);
+  } else {
+    const newId = "c" + Date.now();
+    state.groupsState.groups[newId] = [targetId, sourceId];
+    state.groupsState.groupOrder.push(newId);
+  }
+  saveState();
+  render();
+}
+
+// Dropping onto a group's empty background appends to the end of that group.
+function handleDropOnGroup(sourceId, groupId) {
+  ensureGroupsState();
+  if (!sourceId || !currentNodes[sourceId] || !state.groupsState.groups[groupId]) return;
+  removeFromGroup(sourceId);
+  state.groupsState.groups[groupId].push(sourceId);
+  saveState();
+  render();
+}
+
+// Dropping onto open background ungroups.
+function handleDropOnBackground(sourceId) {
+  ensureGroupsState();
+  if (!sourceId || !currentNodes[sourceId]) return;
+  if (!getGroupOf(sourceId)) return;
+  removeFromGroup(sourceId);
+  saveState();
+  render();
+}
+
+let dragSourceRootId = null;
+let dragSourceChildId = null;
+let dragGhostEl = null;
+
+// Removes the drag-preview ghost and any sibling nudges, if any.
+function clearDragPreview() {
+  if (dragGhostEl && dragGhostEl.parentNode) dragGhostEl.remove();
+  dragGhostEl = null;
+  dragChildLastTarget = null;
+  document.querySelectorAll(".graph-node.drag-shift").forEach(el => {
+    el.classList.remove("drag-shift");
+    el.style.transform = "";
+  });
+  document.querySelectorAll(".graph-node.drag-source-hidden").forEach(el => {
+    el.classList.remove("drag-source-hidden");
+  });
+}
+
+// The ghost is always an overlay (fixed positioning, pointer-events: none) —
+// never inserted into the real card layout. Native HTML5 drag & drop
+// retargets dragover/dragenter by hit-testing whatever's under the cursor on
+// every move, so nudging a real (interactive) sibling out of the way pulls it
+// out from under the cursor mid-drag; the browser then treats the next
+// dragover as an invalid target and snaps the drag back on release. Keeping
+// the ghost pointer-events:none and off to the side avoids that entirely.
+function makeGhostEl(extraClass) {
+  if (!dragGhostEl) {
+    dragGhostEl = document.createElement("div");
+    dragGhostEl.className = "graph-node goal-ghost" + (extraClass ? " " + extraClass : "");
+    dragGhostEl.style.position = "fixed";
+  }
+  if (dragGhostEl.parentNode !== document.body) document.body.appendChild(dragGhostEl);
+  return dragGhostEl;
+}
+
+// Root/tier-group drag: park the ghost beside the hovered card (left/right of
+// it, whichever side the cursor is on) without touching the real flex flow.
+function showRootGhost(e, targetDiv) {
+  const ghost = makeGhostEl("compact-node");
+  const rect = targetDiv.getBoundingClientRect();
+  const before = e.clientX < rect.left + rect.width / 2;
+  ghost.style.left = (before ? rect.left - 68 : rect.right + 6) + "px";
+  ghost.style.top = rect.top + "px";
+}
+
+// Hovering empty space in the flow area or a group: park the ghost past the
+// last real card in that container.
+function appendRootGhost(container) {
+  const ghost = makeGhostEl("compact-node");
+  const kids = [...container.children].filter(c => c !== ghost);
+  const last = kids[kids.length - 1];
+  const rect = (last || container).getBoundingClientRect();
+  ghost.style.left = (last ? rect.right + 6 : rect.left) + "px";
+  ghost.style.top = rect.top + "px";
+}
+
+function findGraphNodeEl(container, id) {
+  return Array.from(container.querySelectorAll(".graph-node")).find(el => el.dataset.id === id) || null;
+}
+
+// Preview the row each column sibling lands on if sourceId is inserted
+// directly before targetId, mirroring computeRows' gap-preserving assignment
+// (order only decides sequence; rows still snap toward the child average).
+// siblingIds must be the DOM-scoped list from captureChildSiblingRects, not
+// columnSiblings() — see that function for why.
+function previewChildOrderRows(sourceId, targetId, siblingIds) {
+  const arr = siblingIds.filter(x => x !== sourceId);
+  const tIdx = arr.indexOf(targetId);
+  if (tIdx === -1) return null;
+  arr.splice(tIdx, 0, sourceId);
+  // Only a node with children has something real to align with — its row can
+  // justifiably snap toward their average (this is what keeps a parent level
+  // with its children after a reorder). A childless node has no such anchor;
+  // giving it one anyway by falling back to its own *old* row (as this used
+  // to) pulls it back toward its previous position and pushes every sibling
+  // after it down by that much — a plain leaf moved to the front of the list
+  // should just take the first open row, not drag the rest of the list down
+  // to where it used to sit.
+  const desired = {};
+  arr.forEach(id => {
+    const childRows = (currentNodes[id].childIds || []).map(cid => lastRows[cid]).filter(r => r != null);
+    desired[id] = childRows.length ? childRows.reduce((a, b) => a + b, 0) / childRows.length : null;
+  });
+  const rows = {};
+  let nextRow = 0;
+  arr.forEach(id => {
+    const r = desired[id] != null ? Math.max(nextRow, Math.round(desired[id])) : nextRow;
+    rows[id] = r;
+    nextRow = r + 1;
+  });
+  return rows;
+}
+
+// Set once per resolved target, cleared on drag end — see the early return
+// below for why.
+let dragChildLastTarget = null;
+
+// Child (expanded) reorder drag: show the ghost at its landing slot and nudge
+// bumped siblings (real cards) out of the way so the drop result is obvious
+// before release. The siblings physically move here — safe only because
+// retargeting no longer depends on any single card's own dragover listener
+// staying under the cursor; see the document-level dragover/drop listeners
+// below, which hit-test against a frozen snapshot instead of the live DOM.
+function showChildReorderGhost(sourceId, targetId) {
+  // dragover fires continuously (many times a second) for as long as the
+  // cursor sits still over the same target, not just when the target
+  // changes. Redoing the clear-then-reapply-transform dance below on every
+  // one of those ticks — with a getBoundingClientRect() read forcing a
+  // layout flush in between the clear and the reapply — restarted the CSS
+  // transition from zero each time, which is what read as the shifted cards
+  // visibly vibrating. Skipping the no-op case (nothing to change since the
+  // last tick) is what actually fixes it, not just reordering the reads.
+  if (targetId === dragChildLastTarget) return;
+  dragChildLastTarget = targetId;
+
+  const canvas = dragChildCanvas;
+  if (!canvas) return;
+  const rows = previewChildOrderRows(sourceId, targetId, dragChildSiblingRects.map(s => s.id));
+  if (!rows) return;
+
+  document.querySelectorAll(".graph-node.drag-shift").forEach(el => {
+    el.classList.remove("drag-shift");
+    el.style.transform = "";
+  });
+
+  // The dragged card's own placeholder stays at its old (unshifted) spot; once
+  // a sibling shift preview is active, a bumped sibling can slide into that
+  // exact spot and overlap it. The ghost already shows where it's landing, so
+  // hide the stale placeholder rather than let the two overlap.
+  const sourceEl = findGraphNodeEl(canvas, sourceId);
+  if (sourceEl) sourceEl.classList.add("drag-source-hidden");
+
+  const ghost = makeGhostEl();
+  const canvasRect = canvas.getBoundingClientRect();
+  const col = lastColumns[sourceId];
+  ghost.style.left = (canvasRect.left + col * COL_W + PAD) + "px";
+  ghost.style.top = (canvasRect.top + rows[sourceId] * ROW_H + PAD) + "px";
+
+  Object.keys(rows).forEach(id => {
+    if (id === sourceId) return;
+    const delta = rows[id] - lastRows[id];
+    if (!delta) return;
+    const el = findGraphNodeEl(canvas, id);
+    if (el) {
+      el.style.transform = `translateY(${delta * ROW_H}px)`;
+      el.classList.add("drag-shift");
+    }
+  });
+}
+
+// Column-sibling geometry frozen at dragstart, before anything shifts, scoped
+// to the exact .chain-canvas the dragged card lives in (via its own DOM
+// position, not columnSiblings()/lastColumns/lastNodeBlock). Those globals
+// hold one value per node id, but any node visible through more than one
+// expanded root at once — every `shared:` id in data.js, or anything reached
+// via a linkedEdge — renders once per root block, and whichever root
+// happened to render last wins the id's entry. Trusting them here could
+// resolve "siblings" from a completely different block than the one actually
+// being dragged in, silently reordering the wrong cards (or finding no
+// siblings at all, making the drag look permanently invalid). Reading
+// straight off the DOM within the card's own canvas sidesteps that entirely.
+//
+// Hit testing during the drag is also done against this frozen snapshot,
+// never the live DOM — using elementFromPoint (or any other live lookup)
+// instead would read back positions the drag-shift preview itself just
+// moved, feeding the shift into the next target computation and compounding
+// without bound (each tick nudging things further).
+let dragChildCanvas = null;
+let dragChildSiblingRects = null;
+
+function captureChildSiblingRects(sourceId, sourceEl) {
+  dragChildCanvas = sourceEl.closest(".chain-canvas");
+  if (!dragChildCanvas) { dragChildSiblingRects = null; return; }
+  const col = sourceEl.style.left;
+  dragChildSiblingRects = Array.from(dragChildCanvas.querySelectorAll(".graph-node[data-id]"))
+    .filter(el => el.style.left === col)
+    .map(el => {
+      const r = el.getBoundingClientRect();
+      return { id: el.dataset.id, top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+    });
+}
+
+// Finds the frozen sibling whose original vertical midpoint is nearest
+// (clientX, clientY), i.e. "which slot is the cursor closest to" — immune to
+// any shifting the preview itself causes, since the geometry never updates
+// mid-drag.
+function childReorderTargetAt(x, y) {
+  if (!dragChildSiblingRects || !dragChildSiblingRects.length) return null;
+  const col = dragChildSiblingRects[0];
+  if (x < col.left - 40 || x > col.right + 40) return null;
+  let bestId = null, bestDist = Infinity;
+  dragChildSiblingRects.forEach(s => {
+    if (s.id === dragSourceChildId) return;
+    const dist = Math.abs(y - (s.top + s.bottom) / 2);
+    if (dist < bestDist) { bestDist = dist; bestId = s.id; }
+  });
+  return bestId;
+}
+
+document.addEventListener("dragover", e => {
+  if (!dragSourceChildId) return;
+  const targetId = childReorderTargetAt(e.clientX, e.clientY);
+  if (!targetId) return;
+  e.preventDefault();
+  showChildReorderGhost(dragSourceChildId, targetId);
+});
+
+document.addEventListener("drop", e => {
+  if (!dragSourceChildId) return;
+  const targetId = childReorderTargetAt(e.clientX, e.clientY);
+  if (!targetId) return;
+  e.preventDefault();
+  const sourceId = dragSourceChildId;
+  const siblingIds = dragChildSiblingRects.map(s => s.id);
+  clearDragPreview();
+  handleChildReorderDrop(sourceId, targetId, siblingIds);
+});
+
+// Sibling ids of `id` within its column/block, in displayed row order.
+function columnSiblings(id) {
+  return lastVisibleIds
+    .filter(x => lastColumns[x] === lastColumns[id] && lastNodeBlock[x] === lastNodeBlock[id])
+    .sort((a, b) => lastRows[a] - lastRows[b]);
+}
+
+// Persists an explicit order for every sibling in the column, so manual order
+// wins over the child-row-average placement in computeRows.
+function applyColumnOrder(orderedIds) {
+  orderedIds.forEach((sid, i) => { state.order[sid] = i; });
+  saveState();
+  render();
+}
+
+function moveNode(id, dir) {
+  // Root goals reorder within the overall flow order; non-root nodes reorder
+  // among their column siblings within the same root's block.
+  const isRoot = currentNodes[id] && currentNodes[id].parentIds.length === 0;
+  if (isRoot) {
+    const siblings = lastRootOrder;
+    const idx = siblings.indexOf(id);
+    if (idx === -1) return; // grouped root: reorder by dragging within the group
+    const swapIdx = idx + dir;
+    if (swapIdx < 0 || swapIdx >= siblings.length) return;
+    const otherId = siblings[swapIdx];
+    const a = effectiveOrder(id, lastDiscoveryOrder);
+    const b = effectiveOrder(otherId, lastDiscoveryOrder);
+    state.order[id] = b;
+    state.order[otherId] = a;
+    saveState();
+    render();
+    return;
+  }
+  const siblings = columnSiblings(id);
+  const idx = siblings.indexOf(id);
+  if (idx === -1) return;
+  const swapIdx = idx + dir;
+  if (swapIdx < 0 || swapIdx >= siblings.length) return;
+  const arr = siblings.slice();
+  arr.splice(idx, 1);
+  arr.splice(swapIdx, 0, id);
+  applyColumnOrder(arr);
+}
+
+// Drag & drop reorder: insert source before target among column siblings.
+// siblingIds, when given, is the DOM-scoped list captured at dragstart (see
+// captureChildSiblingRects) — trust it over columnSiblings()/lastNodeBlock,
+// which can't tell apart a shared/linked node's multiple rendered instances.
+function handleChildReorderDrop(sourceId, targetId, siblingIds) {
+  if (!sourceId || !targetId || sourceId === targetId) return;
+  if (!siblingIds && (lastColumns[sourceId] !== lastColumns[targetId] || lastNodeBlock[sourceId] !== lastNodeBlock[targetId])) return;
+  const arr = (siblingIds || columnSiblings(sourceId)).filter(x => x !== sourceId);
+  const tIdx = arr.indexOf(targetId);
+  if (tIdx === -1) return;
+  arr.splice(tIdx, 0, sourceId);
+  applyColumnOrder(arr);
+}
+
+// --- Edge retargeting -----------------------------------------------------------
+// Drag the handle at the parent end of an edge onto another node to make that
+// node the child's parent instead.
+
+function startEdgeRetarget(e, childId, oldParentId, svg, handle, x1, y1) {
+  e.preventDefault();
+  e.stopPropagation();
+  handle.style.pointerEvents = "none"; // keep elementFromPoint seeing what's underneath
+
+  const temp = document.createElementNS(SVG_NS, "path");
+  temp.setAttribute("class", "edge edge-retarget");
+  svg.appendChild(temp);
+
+  let hoverCard = null;
+  function cardAt(ev) {
+    const el = document.elementFromPoint(ev.clientX, ev.clientY);
+    return el && el.closest ? el.closest(".graph-node") : null;
+  }
+
+  function move(ev) {
+    const rect = svg.getBoundingClientRect();
+    const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+    const dx = Math.max(40, (x - x1) / 2);
+    temp.setAttribute("d", `M${x1},${y1} C${x1 + dx},${y1} ${x - dx},${y} ${x},${y}`);
+    const card = cardAt(ev);
+    if (card !== hoverCard) {
+      if (hoverCard) hoverCard.classList.remove("retarget-target");
+      hoverCard = card;
+      if (hoverCard && hoverCard.dataset.id !== childId && hoverCard.dataset.id !== oldParentId) {
+        hoverCard.classList.add("retarget-target");
+      }
+    }
+  }
+
+  function up(ev) {
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", up);
+    temp.remove();
+    if (hoverCard) hoverCard.classList.remove("retarget-target");
+    const card = cardAt(ev);
+    if (card && card.dataset.id) reparentNode(childId, oldParentId, card.dataset.id);
+    else render(); // restore the handle
+  }
+
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", up);
+}
+
+function reparentNode(childId, oldParentId, newParentId) {
+  if (!childId || !newParentId || newParentId === oldParentId || newParentId === childId) { render(); return; }
+  if (!currentNodes[newParentId] || !currentNodes[childId]) { render(); return; }
+  if (isAncestor(childId, newParentId, currentNodes)) {
+    showToast("Can't move that arrow there — it would create a loop.");
+    render();
+    return;
+  }
+
+  const custom = state.customNodes[childId];
+  const linked = state.linkedEdges[oldParentId];
+  if (custom && custom.parentId === oldParentId) {
+    custom.parentId = newParentId;
+  } else if (linked && linked.includes(childId)) {
+    state.linkedEdges[oldParentId] = linked.filter(x => x !== childId);
+    if (!state.linkedEdges[oldParentId].length) delete state.linkedEdges[oldParentId];
+    addToLinkedEdges(newParentId, childId);
+  } else {
+    // Built-in tree edge: record the detachment, then re-attach as a link edge.
+    if (!state.removedEdges[oldParentId]) state.removedEdges[oldParentId] = [];
+    if (!state.removedEdges[oldParentId].includes(childId)) state.removedEdges[oldParentId].push(childId);
+    addToLinkedEdges(newParentId, childId);
+  }
+
+  state.collapsed[newParentId] = false;
+  saveState();
+  render();
+}
+
+function addToLinkedEdges(parentId, childId) {
+  if (!state.linkedEdges[parentId]) state.linkedEdges[parentId] = [];
+  if (!state.linkedEdges[parentId].includes(childId)) state.linkedEdges[parentId].push(childId);
+}
+
+// --- Right-click context menu --------------------------------------------------
+
+let contextMenuEl = null;
+
+function closeContextMenu() {
+  if (contextMenuEl) {
+    contextMenuEl.remove();
+    contextMenuEl = null;
+  }
+}
+
+function openContextMenu(x, y, node, info) {
+  closeContextMenu();
+  const menu = document.createElement("div");
+  menu.className = "context-menu";
+
+  function addItem(label, onClick, disabled) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "context-menu-item";
+    item.textContent = label;
+    if (disabled) {
+      item.disabled = true;
+    } else {
+      item.addEventListener("click", () => { closeContextMenu(); onClick(); });
+    }
+    menu.appendChild(item);
+    return item;
+  }
+
+  if (info.hasChildren) {
+    addItem(isExpandedState(node.id) ? "Collapse" : "Expand", () => toggleCollapse(node.id));
+  }
+
+  if (info.status === "done") {
+    addItem("Mark as not done", () => markDone(node.id, false));
+  } else if (isAutoTrackedSkill(node)) {
+    addItem("Tracked automatically from hiscores", null, true);
+  } else if (!info.canToggleDone) {
+    addItem("Locked until sub-goals are done", null, true);
+  } else {
+    addItem("Mark complete", () => markDone(node.id, true));
+  }
+
+  if (node.link) {
+    addItem("Open wiki link ↗", () => window.open(node.link, "_blank", "noopener"));
+  }
+
+  const isGroupedRoot = node.parentIds.length === 0 && getGroupOf(node.id) !== null;
+  if (!isGroupedRoot) {
+    addItem("Move up", () => moveNode(node.id, -1));
+    addItem("Move down", () => moveNode(node.id, 1));
+  } else {
+    addItem("Remove from group", () => { removeFromGroup(node.id); saveState(); render(); });
+  }
+
+  addItem("Add sub-goal…", () => openAddGoalModal(node.id));
+  addItem("Open / Edit…", () => openEditGoalModal(node.id));
+  addItem("Delete", () => removeGoal(node.id));
+
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  let left = x, top = y;
+  if (left + rect.width > window.innerWidth - 8) left = window.innerWidth - rect.width - 8;
+  if (top + rect.height > window.innerHeight - 8) top = window.innerHeight - rect.height - 8;
+  menu.style.left = left + "px";
+  menu.style.top = top + "px";
+
+  contextMenuEl = menu;
+  setTimeout(() => document.addEventListener("click", closeContextMenu, { once: true }), 0);
+}
+
+document.addEventListener("contextmenu", e => {
+  if (!e.target.closest(".graph-node")) closeContextMenu();
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeContextMenu(); });
+
+// --- Add / Edit goal modal ----------------------------------------------------
+// One modal handles both flows:
+//  - Add: create a new sub-goal under `goalParentId`, or (if a suggestion is
+//    picked) link an existing goal in as a shared prerequisite — the form is
+//    prefilled from that goal, and changing any field edits it on submit.
+//  - Edit: rename/re-icon/re-link/delete `goalEditId` (built-in goals store an
+//    override patch; custom ones are edited directly).
+
+const modalEl = document.getElementById("goalModal");
+const modalForm = document.getElementById("goalForm");
+const modalTitleEl = document.getElementById("goalModalTitle");
+const nameInput = document.getElementById("goalName");
+const typeSelect = document.getElementById("goalTypeSelect");
+const iconQueryInput = document.getElementById("goalIconQuery");
+const iconQueryLabel = document.getElementById("goalIconQueryLabel");
+const iconQueryHint = document.getElementById("goalIconQueryHint");
+const iconPreviewSlot = document.getElementById("goalIconPreview");
+const linkQueryInput = document.getElementById("goalLinkQuery");
+const linkQueryHint = document.getElementById("goalLinkQueryHint");
+const linkDisabledCheckbox = document.getElementById("goalLinkDisabled");
+const linkPreviewEl = document.getElementById("goalLinkPreview");
+const descriptionInput = document.getElementById("goalDescription");
+const suggestionsEl = document.getElementById("goalSuggestions");
+const linkNoticeEl = document.getElementById("goalLinkNotice");
+const errorEl = document.getElementById("goalError");
+const cancelBtn = document.getElementById("goalCancel");
+const deleteBtn = document.getElementById("goalDelete");
+const submitBtn = document.getElementById("goalSubmit");
+
+let goalMode = "add"; // "add" | "edit"
+let goalParentId = null;
+let goalEditId = null;
+let goalLinkedExistingId = null;
+let goalLinkedSnapshot = null; // fields at link time, to detect user edits
+
+function setIconPreview(url, fallbackText) {
+  iconPreviewSlot.innerHTML = "";
+  if (url) {
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "icon preview";
+    img.addEventListener("error", () => { iconPreviewSlot.textContent = "?"; }, { once: true });
+    iconPreviewSlot.appendChild(img);
+  } else {
+    iconPreviewSlot.textContent = fallbackText || "—";
+  }
+}
+
+// Skill/quest icons+links are deterministic, so their previews never need a
+// network round trip. Only "other" goes through a fuzzy wiki search.
+function updateFieldHints() {
+  const type = typeSelect.value;
+  if (type === "skill") {
+    iconQueryLabel.textContent = "Skill override";
+    iconQueryHint.textContent = "(optional — leave blank to detect the skill from the name)";
+    iconQueryInput.placeholder = "e.g. Agility";
+    iconQueryInput.disabled = false;
+    linkQueryHint.textContent = "(optional — leave blank to detect the skill from the name)";
+    linkQueryInput.placeholder = "e.g. Agility";
+  } else if (type === "quest") {
+    iconQueryLabel.textContent = "Icon override";
+    iconQueryHint.textContent = "(quests always use the quest icon)";
+    iconQueryInput.placeholder = "";
+    iconQueryInput.disabled = true;
+    linkQueryHint.textContent = "(optional — leave blank to use the exact quest name)";
+    linkQueryInput.placeholder = "e.g. Cabin Fever";
+  } else {
+    iconQueryLabel.textContent = "Icon override";
+    iconQueryHint.textContent = "(optional — leave blank to auto-search using the name)";
+    iconQueryInput.placeholder = "e.g. Dragon scimitar";
+    iconQueryInput.disabled = false;
+    linkQueryHint.textContent = "(optional — leave blank to auto-search using the name)";
+    linkQueryInput.placeholder = "e.g. Eagles' Peak";
+  }
+}
+
+let previewGeneration = 0;
+
+const updateLivePreview = debounce(async () => {
+  const myGeneration = ++previewGeneration;
+  const isStale = () => myGeneration !== previewGeneration;
+
+  const type = typeSelect.value;
+  const name = nameInput.value.trim();
+  const iconQuery = iconQueryInput.value.trim() || name;
+  const linkQuery = linkQueryInput.value.trim() || name;
+
+  if (type === "skill") {
+    const skill = typeof detectSkillName === "function" ? detectSkillName(iconQuery) : null;
+    setIconPreview(skill ? WIKI_ICON_BASE + skill + "_icon.png" : null, skill ? null : "?");
+  } else if (type === "quest") {
+    setIconPreview(WIKI_ICON_BASE + "Quest_point_icon.png", null);
+  } else if (!iconQuery) {
+    setIconPreview(null, "—");
+  } else {
+    const info = await fetchWikiInfo(iconQuery);
+    if (isStale()) return;
+    setIconPreview(info.iconUrl, info.iconUrl ? null : "?");
+  }
+
+  if (linkDisabledCheckbox.checked) {
+    linkPreviewEl.textContent = "No wiki link";
+  } else if (type === "skill") {
+    const skill = typeof detectSkillName === "function" ? detectSkillName(linkQuery) : null;
+    linkPreviewEl.textContent = skill ? "→ Ironman Guide: " + skill : "No skill detected in that text";
+  } else if (type === "quest") {
+    linkPreviewEl.textContent = linkQuery ? "→ " + linkQuery : "—";
+  } else if (!linkQuery) {
+    linkPreviewEl.textContent = "—";
+  } else {
+    const info = await fetchWikiInfo(linkQuery);
+    if (isStale()) return;
+    linkPreviewEl.textContent = info.pageTitle ? ("→ " + info.pageTitle) : "No match found";
+  }
+}, 400);
+
+[nameInput, iconQueryInput, linkQueryInput].forEach(el => {
+  el.addEventListener("input", updateLivePreview);
+});
+linkDisabledCheckbox.addEventListener("change", updateLivePreview);
+typeSelect.addEventListener("change", () => { updateFieldHints(); updateLivePreview(); });
+
+function currentGoalFields() {
+  return {
+    title: nameInput.value.trim(),
+    type: typeSelect.value,
+    iconQuery: iconQueryInput.value.trim(),
+    linkQuery: linkQueryInput.value.trim(),
+    linkDisabled: linkDisabledCheckbox.checked,
+    description: descriptionInput.value.trim()
+  };
+}
+
+function resetGoalModalFields() {
+  nameInput.value = "";
+  typeSelect.value = "other";
+  iconQueryInput.value = "";
+  linkQueryInput.value = "";
+  linkDisabledCheckbox.checked = false;
+  descriptionInput.value = "";
+  updateFieldHints();
+  setIconPreview(null, "—");
+  linkPreviewEl.textContent = "—";
+  suggestionsEl.innerHTML = "";
+  linkNoticeEl.hidden = true;
+  errorEl.hidden = true;
+  goalLinkedExistingId = null;
+  goalLinkedSnapshot = null;
+}
+
+// Fills the form from an existing node (used by add-mode autocomplete and edit mode).
+function fillGoalFieldsFromNode(node) {
+  const source = node.custom ? (state.customNodes[node.id] || {}) : (state.overrides[node.id] || {});
+  nameInput.value = node.title;
+  typeSelect.value = node.type || "other";
+  updateFieldHints();
+  iconQueryInput.value = source.iconQuery || "";
+  linkQueryInput.value = source.linkQuery || "";
+  linkDisabledCheckbox.checked = !!source.linkDisabled;
+  descriptionInput.value = node.description || "";
+  setIconPreview(node.iconUrl || (typeof resolveIconFile === "function" && resolveIconFile(node) ? WIKI_ICON_BASE + encodeURIComponent(resolveIconFile(node)) : null), "—");
+  linkPreviewEl.textContent = source.linkDisabled ? "No wiki link" : (node.link ? "→ " + (node.note || node.title) : "—");
+}
+
+function openAddGoalModal(parentId) {
+  goalMode = "add";
+  goalParentId = parentId;
+  goalEditId = null;
+  resetGoalModalFields();
+  modalTitleEl.textContent = "Add sub-goal";
+  submitBtn.textContent = "Add";
+  deleteBtn.hidden = true;
+  suggestionsEl.hidden = false;
+  modalEl.hidden = false;
+  nameInput.focus();
+}
+
+function openEditGoalModal(id) {
+  const node = currentNodes[id];
+  if (!node) return;
+  goalMode = "edit";
+  goalEditId = id;
+  goalParentId = null;
+  resetGoalModalFields();
+  fillGoalFieldsFromNode(node);
+  modalTitleEl.textContent = "Edit goal";
+  submitBtn.textContent = "Save";
+  deleteBtn.hidden = false;
+  suggestionsEl.hidden = true;
+  modalEl.hidden = false;
+  nameInput.focus();
+}
+
+function closeGoalModal() {
+  modalEl.hidden = true;
+  goalParentId = null;
+  goalEditId = null;
+  goalLinkedExistingId = null;
+  goalLinkedSnapshot = null;
+}
+
+cancelBtn.addEventListener("click", closeGoalModal);
+modalEl.addEventListener("click", e => {
+  if (e.target === modalEl) closeGoalModal();
+});
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (!modalEl.hidden) closeGoalModal();
+  if (!resetModalEl.hidden) resetModalEl.hidden = true;
+});
+
+nameInput.addEventListener("input", () => {
+  if (goalMode !== "add") return;
+  const q = nameInput.value.trim().toLowerCase();
+  // Clearing the name unlinks; other edits keep the link and will edit the
+  // linked goal on submit.
+  if (goalLinkedExistingId && !q) {
+    goalLinkedExistingId = null;
+    goalLinkedSnapshot = null;
+    linkNoticeEl.hidden = true;
+  }
+  suggestionsEl.innerHTML = "";
+  if (q.length < 2) return;
+  const matches = Object.values(currentNodes)
+    .filter(n => n.id !== goalParentId && n.title.toLowerCase().includes(q))
+    .slice(0, 6);
+  matches.forEach(n => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "suggestion-chip";
+    chip.textContent = n.title;
+    chip.addEventListener("click", () => {
+      goalLinkedExistingId = n.id;
+      fillGoalFieldsFromNode(n);
+      goalLinkedSnapshot = JSON.stringify(currentGoalFields());
+      linkNoticeEl.hidden = false;
+      suggestionsEl.innerHTML = "";
+    });
+    suggestionsEl.appendChild(chip);
+  });
+});
+
+modalForm.addEventListener("submit", e => {
+  e.preventDefault();
+  errorEl.hidden = true;
+
+  if (goalMode === "add") {
+    if (!goalParentId) return;
+    if (goalLinkedExistingId) {
+      const ok = addLinkedChild(goalParentId, goalLinkedExistingId);
+      if (!ok) {
+        linkNoticeEl.hidden = true;
+        errorEl.hidden = false;
+        errorEl.textContent = "Can't link that here — it would create a loop (that goal is an ancestor of this one).";
+        return;
+      }
+      // If the user changed anything after picking the suggestion, apply those
+      // changes to the linked goal.
+      const fields = currentGoalFields();
+      if (fields.title && goalLinkedSnapshot && JSON.stringify(fields) !== goalLinkedSnapshot) {
+        saveGoalEdit(goalLinkedExistingId, fields);
+      }
+    } else {
+      const title = nameInput.value.trim();
+      if (!title) return;
+      addCustomChild(goalParentId, title, {
+        type: typeSelect.value,
+        iconQuery: iconQueryInput.value.trim(),
+        linkQuery: linkQueryInput.value.trim(),
+        linkDisabled: linkDisabledCheckbox.checked,
+        description: descriptionInput.value.trim()
+      });
+    }
+  } else if (goalMode === "edit") {
+    const title = nameInput.value.trim();
+    if (!title || !goalEditId) return;
+    saveGoalEdit(goalEditId, currentGoalFields());
+  }
+  closeGoalModal();
+});
+
+deleteBtn.addEventListener("click", () => {
+  if (!goalEditId) return;
+  removeGoal(goalEditId);
+  closeGoalModal();
+});
+
+function addCustomChild(parentId, title, opts) {
+  const id = uid();
+  state.customNodes[id] = { id, parentId, title, type: opts.type || "other" };
+  if (opts.iconQuery) state.customNodes[id].iconQuery = opts.iconQuery;
+  if (opts.linkQuery) state.customNodes[id].linkQuery = opts.linkQuery;
+  if (opts.description) state.customNodes[id].description = opts.description;
+  state.customNodes[id].linkDisabled = !!opts.linkDisabled;
+  state.collapsed[parentId] = false;
+  saveState();
+  render();
+  resolveAndStoreIconLink(id, true, opts.type || "other", opts.iconQuery || title, opts.linkDisabled ? null : (opts.linkQuery || title));
+}
+
+// Resolves icon/link for a node and persists the result, keyed off `type`:
+// skill and quest are deterministic (no network); "other" uses a wiki search.
+// `isCustom` picks state.customNodes vs state.overrides as the write target.
+function resolveAndStoreIconLink(id, isCustom, type, iconQuery, linkQuery) {
+  const target = isCustom ? state.customNodes[id] : (state.overrides[id] = state.overrides[id] || {});
+  if (!target) return;
+  const stillExists = () => (isCustom ? state.customNodes[id] : state.overrides[id]);
+
+  if (type === "skill") {
+    const skill = detectSkillName(iconQuery || linkQuery || "");
+    if (skill) {
+      target.iconUrl = WIKI_ICON_BASE + skill + "_icon.png";
+      if (linkQuery !== null) { target.link = ironmanGuideLink(skill); target.note = "Ironman Guide: " + skill; }
+    }
+    if (linkQuery === null) target.link = null;
+    saveState();
+    render();
+    return;
+  }
+
+  if (type === "quest") {
+    target.iconUrl = WIKI_ICON_BASE + "Quest_point_icon.png";
+    if (linkQuery === null) {
+      target.link = null;
+    } else if (linkQuery) {
+      target.link = `https://oldschool.runescape.wiki/w/${encodeURIComponent(linkQuery.trim().replace(/ /g, "_"))}`;
+      target.note = null;
+    }
+    saveState();
+    render();
+    return;
+  }
+
+  if (iconQuery) {
+    fetchWikiInfo(iconQuery).then(info => {
+      if (info.iconUrl && stillExists()) { target.iconUrl = info.iconUrl; saveState(); render(); }
+    });
+  }
+  if (linkQuery) {
+    fetchWikiInfo(linkQuery).then(info => {
+      if (info.link && stillExists()) { target.link = info.link; saveState(); render(); }
+    });
+  } else if (linkQuery === null) {
+    target.link = null;
+    saveState();
+    render();
+  }
+}
+
+function saveGoalEdit(id, fields) {
+  const node = currentNodes[id];
+  const isCustom = !!node.custom;
+  const target = isCustom ? state.customNodes[id] : (state.overrides[id] = state.overrides[id] || {});
+
+  const typeChanged = fields.type !== node.type;
+  target.title = fields.title;
+  target.type = fields.type;
+  target.iconQuery = fields.iconQuery || undefined;
+  target.linkQuery = fields.linkQuery || undefined;
+  target.linkDisabled = fields.linkDisabled;
+  target.description = fields.description || undefined;
+  if (fields.linkDisabled) target.link = null;
+
+  saveState();
+  render();
+
+  // Skill/quest resolution is deterministic, so always safe to (re)apply. For
+  // "other", built-in goals keep their curated icon/link unless the user typed
+  // an explicit override; custom goals always re-resolve.
+  const hadIcon = !!(node.iconUrl || (typeof resolveIconFile === "function" && resolveIconFile(node)));
+  const hadLink = !!node.link;
+  const iconQuery = fields.type !== "other" ? (fields.iconQuery || fields.title)
+    : fields.iconQuery || (isCustom || !hadIcon || typeChanged ? fields.title : "");
+  const linkQuery = fields.linkDisabled ? null
+    : fields.type !== "other" ? (fields.linkQuery || fields.title)
+    : fields.linkQuery || (isCustom || !hadLink || typeChanged ? fields.title : "");
+  resolveAndStoreIconLink(id, isCustom, fields.type, iconQuery, linkQuery);
+}
+
+function removeGoal(id) {
+  const node = currentNodes[id];
+  if (!node) return;
+  if (node.custom) {
+    delete state.customNodes[id];
+  } else {
+    state.removed[id] = true;
+    delete state.overrides[id];
+  }
+  delete state.done[id];
+  saveState();
+  render();
+}
+
+// Returns true on success, false if it would create a cycle.
+function addLinkedChild(parentId, existingId) {
+  if (isAncestor(existingId, parentId, currentNodes)) return false;
+  addToLinkedEdges(parentId, existingId);
+  state.collapsed[parentId] = false;
+  saveState();
+  render();
+  return true;
+}
+
+// --- Filter / toolbar ---------------------------------------------------------
+
+function applyFilter() {
+  const q = searchEl.value.trim().toLowerCase();
+  const nodeEls = chartEl.querySelectorAll(".graph-node");
+  const edgeEls = chartEl.querySelectorAll(".edge");
+  if (!q) {
+    nodeEls.forEach(n => n.classList.remove("dimmed"));
+    edgeEls.forEach(e => e.classList.remove("dimmed"));
+    return;
+  }
+  const matched = new Set();
+  nodeEls.forEach(n => {
+    const match = n.dataset.title.includes(q);
+    n.classList.toggle("dimmed", !match);
+    if (match) matched.add(n.dataset.id);
+  });
+  edgeEls.forEach(e => {
+    const ok = matched.has(e.dataset.from) || matched.has(e.dataset.to);
+    e.classList.toggle("dimmed", !ok);
+  });
+}
+
+searchEl.addEventListener("input", applyFilter);
+
+document.getElementById("expandAll").addEventListener("click", () => {
+  const { nodes } = getGraph();
+  Object.values(nodes).forEach(n => {
+    if (n.childIds.length > 0) state.collapsed[n.id] = false;
+  });
+  saveState();
+  render();
+});
+
+document.getElementById("collapseAll").addEventListener("click", () => {
+  state.collapsed = {};
+  saveState();
+  render();
+});
+
+const hideCompletedBtnEl = document.getElementById("hideCompletedBtn");
+const hideIncompleteBtnEl = document.getElementById("hideIncompleteBtn");
+
+hideCompletedBtnEl.addEventListener("click", () => {
+  hideCompleted = !hideCompleted;
+  hideCompletedBtnEl.classList.toggle("active", hideCompleted);
+  hideCompletedBtnEl.textContent = hideCompleted ? "Show completed" : "Hide completed";
+  render();
+});
+
+hideIncompleteBtnEl.addEventListener("click", () => {
+  hideIncomplete = !hideIncomplete;
+  hideIncompleteBtnEl.classList.toggle("active", hideIncomplete);
+  hideIncompleteBtnEl.textContent = hideIncomplete ? "Show incomplete" : "Hide incomplete";
+  render();
+});
+
+const resetModalEl = document.getElementById("resetModal");
+const resetConfirmBtn = document.getElementById("resetConfirm");
+const resetCancelBtn = document.getElementById("resetCancel");
+
+document.getElementById("resetAll").addEventListener("click", () => {
+  resetModalEl.hidden = false;
+});
+
+resetCancelBtn.addEventListener("click", () => { resetModalEl.hidden = true; });
+resetModalEl.addEventListener("click", e => {
+  if (e.target === resetModalEl) resetModalEl.hidden = true;
+});
+resetConfirmBtn.addEventListener("click", () => {
+  state = defaultState();
+  saveState();
+  resetModalEl.hidden = true;
+  render();
+});
+
+// --- Profile UI ----------------------------------------------------------------
+
+const profileSelectEl = document.getElementById("profileSelect");
+const profileDeleteBtnEl = document.getElementById("profileDeleteBtn");
+const profileNewBtnEl = document.getElementById("profileNewBtn");
+const profileRenameBtnEl = document.getElementById("profileRenameBtn");
+const profileExportBtnEl = document.getElementById("profileExportBtn");
+const profileImportBtnEl = document.getElementById("profileImportBtn");
+const profileImportInputEl = document.getElementById("profileImportInput");
+
+const profileNameModalEl = document.getElementById("profileNameModal");
+const profileNameFormEl = document.getElementById("profileNameForm");
+const profileNameModalTitleEl = document.getElementById("profileNameModalTitle");
+const profileNameInputEl = document.getElementById("profileNameInput");
+const profileNameSubmitEl = document.getElementById("profileNameSubmit");
+const profileNameCancelEl = document.getElementById("profileNameCancel");
+
+const profileDeleteModalEl = document.getElementById("profileDeleteModal");
+const profileDeleteTextEl = document.getElementById("profileDeleteText");
+const profileDeleteConfirmEl = document.getElementById("profileDeleteConfirm");
+const profileDeleteCancelEl = document.getElementById("profileDeleteCancel");
+
+let profileNameMode = "new"; // "new" | "rename"
+
+profileSelectEl.addEventListener("change", () => switchProfile(profileSelectEl.value));
+
+profileNewBtnEl.addEventListener("click", () => {
+  profileNameMode = "new";
+  profileNameModalTitleEl.textContent = "New profile";
+  profileNameSubmitEl.textContent = "Create";
+  profileNameInputEl.value = "";
+  profileNameModalEl.hidden = false;
+  profileNameInputEl.focus();
+});
+
+profileRenameBtnEl.addEventListener("click", () => {
+  profileNameMode = "rename";
+  profileNameModalTitleEl.textContent = "Rename profile";
+  profileNameSubmitEl.textContent = "Save";
+  profileNameInputEl.value = profilesMeta.profiles[profilesMeta.activeId].name;
+  profileNameModalEl.hidden = false;
+  profileNameInputEl.focus();
+});
+
+function closeProfileNameModal() { profileNameModalEl.hidden = true; }
+profileNameCancelEl.addEventListener("click", closeProfileNameModal);
+profileNameModalEl.addEventListener("click", e => { if (e.target === profileNameModalEl) closeProfileNameModal(); });
+
+profileNameFormEl.addEventListener("submit", e => {
+  e.preventDefault();
+  const name = profileNameInputEl.value.trim();
+  if (!name) return;
+  if (profileNameMode === "new") createProfile(name);
+  else renameProfile(profilesMeta.activeId, name);
+  closeProfileNameModal();
+});
+
+profileDeleteBtnEl.addEventListener("click", () => {
+  if (Object.keys(profilesMeta.profiles).length <= 1) return;
+  profileDeleteTextEl.textContent = `Delete profile "${profilesMeta.profiles[profilesMeta.activeId].name}" and all of its progress? This cannot be undone.`;
+  profileDeleteModalEl.hidden = false;
+});
+
+function closeProfileDeleteModal() { profileDeleteModalEl.hidden = true; }
+profileDeleteCancelEl.addEventListener("click", closeProfileDeleteModal);
+profileDeleteModalEl.addEventListener("click", e => { if (e.target === profileDeleteModalEl) closeProfileDeleteModal(); });
+profileDeleteConfirmEl.addEventListener("click", () => {
+  deleteProfile(profilesMeta.activeId);
+  closeProfileDeleteModal();
+});
+
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (!profileNameModalEl.hidden) closeProfileNameModal();
+  if (!profileDeleteModalEl.hidden) closeProfileDeleteModal();
+});
+
+// --- Profile export / import -----------------------------------------------------
+// Export downloads the active profile as a JSON file; import loads such a file
+// into a brand-new profile (running save-data migrations), so profiles can be
+// moved between browsers or kept as backups.
+
+profileExportBtnEl.addEventListener("click", () => {
+  const name = profilesMeta.profiles[profilesMeta.activeId].name;
+  const payload = {
+    app: "iron-tracker",
+    version: 1,
+    name,
+    exportedAt: new Date().toISOString(),
+    state
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "iron-tracker-" + (name.replace(/[^\w-]+/g, "_") || "profile") + ".json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+profileImportBtnEl.addEventListener("click", () => profileImportInputEl.click());
+
+profileImportInputEl.addEventListener("change", async () => {
+  const file = profileImportInputEl.files && profileImportInputEl.files[0];
+  profileImportInputEl.value = "";
+  if (!file) return;
+  try {
+    const payload = JSON.parse(await file.text());
+    const data = payload && payload.state;
+    if (!data || typeof data !== "object" || payload.app !== "iron-tracker") {
+      throw new Error("not an Iron Tracker profile file");
+    }
+    const migrated = migrateStateData(data);
+    const baseName = (payload.name || file.name.replace(/\.json$/i, "")).trim() || "Imported";
+    const names = new Set(Object.values(profilesMeta.profiles).map(p => p.name));
+    let name = baseName, i = 2;
+    while (names.has(name)) name = `${baseName} (${i++})`;
+    const id = "p" + Date.now();
+    profilesMeta.profiles[id] = { name };
+    profilesMeta.activeId = id;
+    localStorage.setItem(storageKeyFor(id), JSON.stringify(migrated));
+    saveProfilesMeta();
+    state = loadState();
+    refreshProfileSelect();
+    render();
+    showToast(`Imported profile "${name}"`);
+  } catch (e) {
+    showToast("Import failed: " + e.message);
+  }
+});
+
+// --- Hiscores sync --------------------------------------------------------------
+// Fetches a player's skill levels through the local server.py proxy (the
+// hiscores endpoint has no CORS headers) and marks auto-tracked skill goals
+// done once the required level is reached.
+
+async function fetchHiscores(username) {
+  const res = await fetch(`/api/hiscores?player=${encodeURIComponent(username)}`);
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* fall through to error below */ }
+  if (!res.ok || !data || !data.skills) {
+    const msg = (data && data.error) || `Lookup failed (HTTP ${res.status})`;
+    throw new Error(msg);
+  }
+  const levels = {};
+  data.skills.forEach(s => { if (s.name !== "Overall") levels[s.name] = s.level; });
+  return levels;
+}
+
+function applySkillSync(levels) {
+  let changed = 0;
+  Object.values(currentNodes).forEach(node => {
+    if (state.done[node.id] || !isAutoTrackedSkill(node)) return;
+    const req = parseSkillRequirement(node.title);
+    const have = req && levels[req.skill];
+    if (have != null && have >= req.level) {
+      state.done[node.id] = true;
+      changed++;
+    }
+  });
+  return changed;
+}
+
+const rsnInputEl = document.getElementById("rsnInput");
+const syncStatsBtnEl = document.getElementById("syncStatsBtn");
+const syncStatusTextEl = document.getElementById("syncStatusText");
+
+rsnInputEl.value = state.username || "";
+rsnInputEl.addEventListener("change", () => {
+  state.username = rsnInputEl.value.trim();
+  saveState();
+});
+
+syncStatsBtnEl.addEventListener("click", async () => {
+  const username = rsnInputEl.value.trim();
+  if (!username) {
+    syncStatusTextEl.textContent = "Enter a username first";
+    syncStatusTextEl.className = "sync-status error";
+    return;
+  }
+  state.username = username;
+  saveState();
+  syncStatusTextEl.textContent = "Looking up…";
+  syncStatusTextEl.className = "sync-status";
+  syncStatsBtnEl.disabled = true;
+  try {
+    const levels = await fetchHiscores(username);
+    const changed = applySkillSync(levels);
+    saveState();
+    render();
+    syncStatusTextEl.textContent = changed
+      ? `Synced — ${changed} skill goal${changed === 1 ? "" : "s"} completed`
+      : "Synced — no new goals completed";
+    syncStatusTextEl.className = "sync-status success";
+  } catch (e) {
+    syncStatusTextEl.textContent = e.message || "Sync failed";
+    syncStatusTextEl.className = "sync-status error";
+  } finally {
+    syncStatsBtnEl.disabled = false;
+  }
+});
+
+window.addEventListener("error", e => {
+  console.error("Uncaught error:", e.error || e.message);
+});
+window.addEventListener("unhandledrejection", e => {
+  console.error("Unhandled promise rejection:", e.reason);
+});
+
+refreshProfileSelect();
+render();

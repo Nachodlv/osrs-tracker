@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Iron Tracker</title>
+<link rel="stylesheet" href="style.css?v=20" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <h1>Iron Tracker <span class="subtitle">— based on <a href="https://ladlorchart.com/" target="_blank" rel="noopener">Ladlor's Chart</a></span></h1>
+      <div class="overall-progress">
+        <div class="overall-progress-bar"><div id="overallFill" class="overall-progress-fill"></div></div>
+        <span id="overallLabel">0 / 0 (0%)</span>
+      </div>
+    </div>
+    <div class="toolbar">
+      <div class="profile-bar">
+        <label for="profileSelect" class="profile-label">Profile</label>
+        <select id="profileSelect"></select>
+        <button id="profileNewBtn" title="Create a new profile">+ New</button>
+        <button id="profileRenameBtn" title="Rename current profile">Rename</button>
+        <button id="profileExportBtn" title="Download this profile as a file (import it in any other browser)">Export</button>
+        <button id="profileImportBtn" title="Import a profile from an exported file">Import</button>
+        <input id="profileImportInput" type="file" accept=".json,application/json" hidden />
+        <button id="profileDeleteBtn" class="danger" title="Delete current profile">Delete</button>
+      </div>
+      <div class="hiscores-bar">
+        <input id="rsnInput" type="text" placeholder="OSRS username" title="Saved per-profile; used to auto-track skill goals" />
+        <button id="syncStatsBtn">Sync stats</button>
+        <span id="syncStatusText" class="sync-status"></span>
+      </div>
+      <input id="search" type="text" placeholder="Filter goals..." />
+      <button id="expandAll">Expand all</button>
+      <button id="collapseAll">Collapse all</button>
+      <button id="hideCompletedBtn">Hide completed</button>
+      <button id="hideIncompleteBtn">Hide incomplete</button>
+      <button id="resetAll" class="danger">Reset progress</button>
+    </div>
+    <div class="legend">
+      <span>🔗 Shared requirement (unlocks multiple goals)</span>
+      <span>📊 Skill goal tracked automatically from your hiscores</span>
+    </div>
+  </header>
+
+  <main id="chart"></main>
+
+  <footer>
+    <p>Progress is saved automatically in this browser (localStorage). Click any goal to expand/collapse it (expanding opens its whole subtree at once), right-click (or long-press on mobile) for the full menu — rename, re-icon, re-link, add a description, reorder, add a sub-goal, or delete — including the pre-built goals.</p>
+    <p>Skill goals with a clean "&lt;level&gt; &lt;Skill&gt;" requirement are tracked automatically: enter your username and click <code>Sync stats</code>. This needs the bundled <code>server.py</code> running (not a plain static server) since the OSRS hiscores can't be reached directly from a browser page.</p>
+  </footer>
+
+  <div id="goalModal" class="modal-overlay" hidden>
+    <form id="goalForm" class="modal-card">
+      <h2 id="goalModalTitle">Add sub-goal</h2>
+      <label class="modal-label">
+        Name
+        <input id="goalName" type="text" autocomplete="off" placeholder="e.g. 60 Agility" required />
+      </label>
+      <div id="goalSuggestions" class="suggestions"></div>
+      <p id="goalLinkNotice" class="link-notice" hidden>
+        ✓ This will link the existing goal here instead of creating a duplicate — completing it anywhere will complete it everywhere. If you change any field, the linked goal will be updated. Clear the name to unlink.
+      </p>
+
+      <label class="modal-label">
+        Type
+        <select id="goalTypeSelect">
+          <option value="skill">Skill</option>
+          <option value="quest">Quest</option>
+          <option value="other" selected>Other</option>
+        </select>
+      </label>
+
+      <label class="modal-label">
+        <span id="goalIconQueryLabel">Icon override</span>
+        <span id="goalIconQueryHint" class="modal-hint">(optional — leave blank to auto-search using the name)</span>
+        <div class="icon-override-row">
+          <input id="goalIconQuery" type="text" autocomplete="off" placeholder="e.g. Dragon scimitar" />
+          <span id="goalIconPreview" class="icon-preview">—</span>
+        </div>
+      </label>
+
+      <label class="modal-label">
+        Wiki link <span id="goalLinkQueryHint" class="modal-hint">(optional — leave blank to auto-search using the name)</span>
+        <input id="goalLinkQuery" type="text" autocomplete="off" placeholder="e.g. Eagles' Peak" />
+      </label>
+      <label class="modal-checkbox-row">
+        <input id="goalLinkDisabled" type="checkbox" />
+        No wiki link for this goal
+      </label>
+      <p id="goalLinkPreview" class="link-preview">—</p>
+
+      <label class="modal-label">
+        Description <span class="modal-hint">(optional notes — shown when you open this goal)</span>
+        <textarea id="goalDescription" rows="3" placeholder="e.g. Buy supplies from the GE first, then teleport to..."></textarea>
+      </label>
+
+      <p id="goalError" class="error-notice" hidden></p>
+
+      <div class="modal-actions">
+        <button type="button" id="goalDelete" class="danger" hidden>Delete</button>
+        <button type="button" id="goalCancel">Cancel</button>
+        <button type="submit" id="goalSubmit" class="primary">Add</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="resetModal" class="modal-overlay" hidden>
+    <div class="modal-card">
+      <h2>Reset progress?</h2>
+      <p class="modal-body-text">This clears every checkmark, edit, custom goal, removed goal, and link you've added. This cannot be undone.</p>
+      <div class="modal-actions">
+        <button type="button" id="resetCancel">Cancel</button>
+        <button type="button" id="resetConfirm" class="primary danger">Reset everything</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="profileNameModal" class="modal-overlay" hidden>
+    <form id="profileNameForm" class="modal-card">
+      <h2 id="profileNameModalTitle">New profile</h2>
+      <label class="modal-label">
+        Name
+        <input id="profileNameInput" type="text" autocomplete="off" placeholder="e.g. Main, Zerker, HCIM" required />
+      </label>
+      <div class="modal-actions">
+        <button type="button" id="profileNameCancel">Cancel</button>
+        <button type="submit" id="profileNameSubmit" class="primary">Create</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="profileDeleteModal" class="modal-overlay" hidden>
+    <div class="modal-card">
+      <h2>Delete this profile?</h2>
+      <p id="profileDeleteText" class="modal-body-text"></p>
+      <div class="modal-actions">
+        <button type="button" id="profileDeleteCancel">Cancel</button>
+        <button type="button" id="profileDeleteConfirm" class="primary danger">Delete profile</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="migration.js?v=20"></script>
+  <script src="data.js?v=20"></script>
+  <script src="app.js?v=20"></script>
+</body>
+</html>
