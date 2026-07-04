@@ -95,6 +95,7 @@ function switchProfile(id) {
   profilesMeta.activeId = id;
   saveProfilesMeta();
   state = loadState();
+  clearUndo();
   refreshProfileSelect();
   render();
 }
@@ -107,6 +108,7 @@ function createProfile(name) {
   profilesMeta.activeId = id;
   saveProfilesMeta();
   state = loadState();
+  clearUndo();
   refreshProfileSelect();
   render();
 }
@@ -127,6 +129,7 @@ function deleteProfile(id) {
     profilesMeta.activeId = Object.keys(profilesMeta.profiles)[0];
     state = loadState();
   }
+  clearUndo();
   saveProfilesMeta();
   refreshProfileSelect();
   render();
@@ -151,6 +154,70 @@ function showToast(msg) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 3500);
+}
+
+// --- Undo --------------------------------------------------------------------
+// Each undoable user action runs inside withUndo(): it snapshots the serialized
+// state before the action and, if the action changed anything, shows a toast
+// offering to restore that snapshot. Nested withUndo calls (an action that
+// delegates to another) collapse into the outermost, so one action = one undo.
+// Only the single most recent action is undoable.
+let undoActive = false;
+let undoData = null; // { before, label }
+let undoToastEl = null;
+let undoToastTimer = null;
+
+function withUndo(label, fn) {
+  if (undoActive) return fn(); // nested; the outermost action owns the undo
+  undoActive = true;
+  const before = JSON.stringify(state);
+  let result;
+  try { result = fn(); } finally { undoActive = false; }
+  if (JSON.stringify(state) !== before) {
+    undoData = { before, label };
+    showUndoToast(label);
+  }
+  return result;
+}
+
+function dismissUndoToast() {
+  if (undoToastEl) { undoToastEl.remove(); undoToastEl = null; }
+  if (undoToastTimer) { clearTimeout(undoToastTimer); undoToastTimer = null; }
+}
+
+// Called on profile switch/import: the snapshot belongs to a different profile.
+function clearUndo() {
+  undoData = null;
+  dismissUndoToast();
+}
+
+function performUndo() {
+  if (!undoData) return;
+  state = JSON.parse(undoData.before);
+  undoData = null;
+  dismissUndoToast();
+  saveState();
+  render();
+  showToast("Undone");
+}
+
+function showUndoToast(label) {
+  dismissUndoToast();
+  const t = document.createElement("div");
+  t.className = "toast undo-toast";
+  const msg = document.createElement("span");
+  msg.className = "undo-toast-label";
+  msg.textContent = label;
+  t.appendChild(msg);
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "undo-toast-btn";
+  btn.textContent = "Undo";
+  btn.addEventListener("click", performUndo);
+  t.appendChild(btn);
+  document.body.appendChild(t);
+  undoToastEl = t;
+  undoToastTimer = setTimeout(dismissUndoToast, 7000);
 }
 
 // Nodes sharing a `shared` key store their completion under that one key, so
@@ -1132,41 +1199,47 @@ function removeFromGroup(id) {
 // Dropping sourceId onto targetId: joins targetId's group (inserted before it),
 // or creates a new group of the two if targetId is ungrouped.
 function handleGroupDrop(sourceId, targetId) {
-  ensureGroupsState();
-  if (!sourceId || sourceId === targetId || !currentNodes[sourceId] || !currentNodes[targetId]) return;
-  const targetGroup = getGroupOf(targetId);
-  removeFromGroup(sourceId);
-  if (targetGroup) {
-    const arr = state.groupsState.groups[targetGroup];
-    const idx = arr.indexOf(targetId);
-    arr.splice(idx, 0, sourceId);
-  } else {
-    const newId = "c" + Date.now();
-    state.groupsState.groups[newId] = [targetId, sourceId];
-    state.groupsState.groupOrder.push(newId);
-  }
-  saveState();
-  render();
+  withUndo("Grouped goal", () => {
+    ensureGroupsState();
+    if (!sourceId || sourceId === targetId || !currentNodes[sourceId] || !currentNodes[targetId]) return;
+    const targetGroup = getGroupOf(targetId);
+    removeFromGroup(sourceId);
+    if (targetGroup) {
+      const arr = state.groupsState.groups[targetGroup];
+      const idx = arr.indexOf(targetId);
+      arr.splice(idx, 0, sourceId);
+    } else {
+      const newId = "c" + Date.now();
+      state.groupsState.groups[newId] = [targetId, sourceId];
+      state.groupsState.groupOrder.push(newId);
+    }
+    saveState();
+    render();
+  });
 }
 
 // Dropping onto a group's empty background appends to the end of that group.
 function handleDropOnGroup(sourceId, groupId) {
-  ensureGroupsState();
-  if (!sourceId || !currentNodes[sourceId] || !state.groupsState.groups[groupId]) return;
-  removeFromGroup(sourceId);
-  state.groupsState.groups[groupId].push(sourceId);
-  saveState();
-  render();
+  withUndo("Grouped goal", () => {
+    ensureGroupsState();
+    if (!sourceId || !currentNodes[sourceId] || !state.groupsState.groups[groupId]) return;
+    removeFromGroup(sourceId);
+    state.groupsState.groups[groupId].push(sourceId);
+    saveState();
+    render();
+  });
 }
 
 // Dropping onto open background ungroups.
 function handleDropOnBackground(sourceId) {
-  ensureGroupsState();
-  if (!sourceId || !currentNodes[sourceId]) return;
-  if (!getGroupOf(sourceId)) return;
-  removeFromGroup(sourceId);
-  saveState();
-  render();
+  withUndo("Ungrouped goal", () => {
+    ensureGroupsState();
+    if (!sourceId || !currentNodes[sourceId]) return;
+    if (!getGroupOf(sourceId)) return;
+    removeFromGroup(sourceId);
+    saveState();
+    render();
+  });
 }
 
 let dragSourceRootId = null;
@@ -1394,11 +1467,13 @@ function applyRootPreview(action) {
 }
 
 function applyGroupOrder(groupId, order) {
-  ensureGroupsState();
-  if (!state.groupsState.groups[groupId]) return;
-  state.groupsState.groups[groupId] = order;
-  saveState();
-  render();
+  withUndo("Moved goal", () => {
+    ensureGroupsState();
+    if (!state.groupsState.groups[groupId]) return;
+    state.groupsState.groups[groupId] = order;
+    saveState();
+    render();
+  });
 }
 
 document.addEventListener("dragover", e => {
@@ -1474,15 +1549,17 @@ function showGroupGhost(idx, others) {
 }
 
 function commitGroupReorder(newVisibleOrder) {
-  ensureGroupsState();
-  const gs = state.groupsState;
-  const visibleSet = new Set(newVisibleOrder);
-  let k = 0;
-  // Rewrite only the visible groups' slots in groupOrder, leaving any
-  // filtered-out (hidden) groups pinned where they are.
-  gs.groupOrder = gs.groupOrder.map(gid => visibleSet.has(gid) ? newVisibleOrder[k++] : gid);
-  saveState();
-  render();
+  withUndo("Moved group", () => {
+    ensureGroupsState();
+    const gs = state.groupsState;
+    const visibleSet = new Set(newVisibleOrder);
+    let k = 0;
+    // Rewrite only the visible groups' slots in groupOrder, leaving any
+    // filtered-out (hidden) groups pinned where they are.
+    gs.groupOrder = gs.groupOrder.map(gid => visibleSet.has(gid) ? newVisibleOrder[k++] : gid);
+    saveState();
+    render();
+  });
 }
 
 document.addEventListener("dragover", e => {
@@ -1679,39 +1756,43 @@ function columnSiblings(id) {
 // Persists an explicit order for every sibling in the column, so manual order
 // wins over the child-row-average placement in computeRows.
 function applyColumnOrder(orderedIds) {
-  orderedIds.forEach((sid, i) => { state.order[sid] = i; });
-  saveState();
-  render();
+  withUndo("Moved goal", () => {
+    orderedIds.forEach((sid, i) => { state.order[sid] = i; });
+    saveState();
+    render();
+  });
 }
 
 function moveNode(id, dir) {
-  // Root goals reorder within the overall flow order; non-root nodes reorder
-  // among their column siblings within the same root's block.
-  const isRoot = currentNodes[id] && currentNodes[id].parentIds.length === 0;
-  if (isRoot) {
-    const siblings = lastRootOrder;
+  withUndo("Moved goal", () => {
+    // Root goals reorder within the overall flow order; non-root nodes reorder
+    // among their column siblings within the same root's block.
+    const isRoot = currentNodes[id] && currentNodes[id].parentIds.length === 0;
+    if (isRoot) {
+      const siblings = lastRootOrder;
+      const idx = siblings.indexOf(id);
+      if (idx === -1) return; // grouped root: reorder by dragging within the group
+      const swapIdx = idx + dir;
+      if (swapIdx < 0 || swapIdx >= siblings.length) return;
+      const otherId = siblings[swapIdx];
+      const a = effectiveOrder(id, lastDiscoveryOrder);
+      const b = effectiveOrder(otherId, lastDiscoveryOrder);
+      state.order[id] = b;
+      state.order[otherId] = a;
+      saveState();
+      render();
+      return;
+    }
+    const siblings = columnSiblings(id);
     const idx = siblings.indexOf(id);
-    if (idx === -1) return; // grouped root: reorder by dragging within the group
+    if (idx === -1) return;
     const swapIdx = idx + dir;
     if (swapIdx < 0 || swapIdx >= siblings.length) return;
-    const otherId = siblings[swapIdx];
-    const a = effectiveOrder(id, lastDiscoveryOrder);
-    const b = effectiveOrder(otherId, lastDiscoveryOrder);
-    state.order[id] = b;
-    state.order[otherId] = a;
-    saveState();
-    render();
-    return;
-  }
-  const siblings = columnSiblings(id);
-  const idx = siblings.indexOf(id);
-  if (idx === -1) return;
-  const swapIdx = idx + dir;
-  if (swapIdx < 0 || swapIdx >= siblings.length) return;
-  const arr = siblings.slice();
-  arr.splice(idx, 1);
-  arr.splice(swapIdx, 0, id);
-  applyColumnOrder(arr);
+    const arr = siblings.slice();
+    arr.splice(idx, 1);
+    arr.splice(swapIdx, 0, id);
+    applyColumnOrder(arr);
+  });
 }
 
 // --- Edge retargeting -----------------------------------------------------------
@@ -1771,24 +1852,26 @@ function reparentNode(childId, oldParentId, newParentId) {
     return;
   }
 
-  const custom = state.customNodes[childId];
-  const linked = state.linkedEdges[oldParentId];
-  if (custom && custom.parentId === oldParentId) {
-    custom.parentId = newParentId;
-  } else if (linked && linked.includes(childId)) {
-    state.linkedEdges[oldParentId] = linked.filter(x => x !== childId);
-    if (!state.linkedEdges[oldParentId].length) delete state.linkedEdges[oldParentId];
-    addToLinkedEdges(newParentId, childId);
-  } else {
-    // Built-in tree edge: record the detachment, then re-attach as a link edge.
-    if (!state.removedEdges[oldParentId]) state.removedEdges[oldParentId] = [];
-    if (!state.removedEdges[oldParentId].includes(childId)) state.removedEdges[oldParentId].push(childId);
-    addToLinkedEdges(newParentId, childId);
-  }
+  withUndo("Moved goal", () => {
+    const custom = state.customNodes[childId];
+    const linked = state.linkedEdges[oldParentId];
+    if (custom && custom.parentId === oldParentId) {
+      custom.parentId = newParentId;
+    } else if (linked && linked.includes(childId)) {
+      state.linkedEdges[oldParentId] = linked.filter(x => x !== childId);
+      if (!state.linkedEdges[oldParentId].length) delete state.linkedEdges[oldParentId];
+      addToLinkedEdges(newParentId, childId);
+    } else {
+      // Built-in tree edge: record the detachment, then re-attach as a link edge.
+      if (!state.removedEdges[oldParentId]) state.removedEdges[oldParentId] = [];
+      if (!state.removedEdges[oldParentId].includes(childId)) state.removedEdges[oldParentId].push(childId);
+      addToLinkedEdges(newParentId, childId);
+    }
 
-  state.collapsed[newParentId] = false;
-  saveState();
-  render();
+    state.collapsed[newParentId] = false;
+    saveState();
+    render();
+  });
 }
 
 function addToLinkedEdges(parentId, childId) {
@@ -1802,24 +1885,26 @@ function addToLinkedEdges(parentId, childId) {
 // custom node's primary parent link, a manually linked edge, or a built-in
 // tree edge (recorded as a detachment). Mirrors reparentNode's branching.
 function detachEdge(parentId, childId) {
-  const custom = state.customNodes[childId];
-  const linked = state.linkedEdges[parentId];
-  if (custom && custom.parentId === parentId) {
-    custom.parentId = null;
-  } else if (linked && linked.includes(childId)) {
-    state.linkedEdges[parentId] = linked.filter(x => x !== childId);
-    if (!state.linkedEdges[parentId].length) delete state.linkedEdges[parentId];
-  } else {
-    if (!state.removedEdges[parentId]) state.removedEdges[parentId] = [];
-    if (!state.removedEdges[parentId].includes(childId)) state.removedEdges[parentId].push(childId);
-  }
-  // If this was the child's last parent, keep it as a standalone top-level
-  // goal rather than letting pruneRemoved cascade it away.
-  const child = currentNodes[childId];
-  const remaining = child ? child.parentIds.filter(p => p !== parentId) : [];
-  if (!remaining.length) state.rootGoals[childId] = true;
-  saveState();
-  render();
+  withUndo("Removed link", () => {
+    const custom = state.customNodes[childId];
+    const linked = state.linkedEdges[parentId];
+    if (custom && custom.parentId === parentId) {
+      custom.parentId = null;
+    } else if (linked && linked.includes(childId)) {
+      state.linkedEdges[parentId] = linked.filter(x => x !== childId);
+      if (!state.linkedEdges[parentId].length) delete state.linkedEdges[parentId];
+    } else {
+      if (!state.removedEdges[parentId]) state.removedEdges[parentId] = [];
+      if (!state.removedEdges[parentId].includes(childId)) state.removedEdges[parentId].push(childId);
+    }
+    // If this was the child's last parent, keep it as a standalone top-level
+    // goal rather than letting pruneRemoved cascade it away.
+    const child = currentNodes[childId];
+    const remaining = child ? child.parentIds.filter(p => p !== parentId) : [];
+    if (!remaining.length) state.rootGoals[childId] = true;
+    saveState();
+    render();
+  });
 }
 
 // --- Right-click context menu --------------------------------------------------
@@ -2282,41 +2367,52 @@ modalForm.addEventListener("submit", e => {
   e.preventDefault();
   errorEl.hidden = true;
 
-  if (goalMode === "add") {
-    if (goalLinkedExistingId) {
-      // Under a parent, link the existing goal in as a prerequisite. At the top
-      // level there is no parent to link into, so just edit the existing goal.
-      if (goalParentId) {
-        const ok = addLinkedChild(goalParentId, goalLinkedExistingId);
-        if (!ok) {
-          linkNoticeEl.hidden = true;
-          errorEl.hidden = false;
-          errorEl.textContent = "Can't link that here — it would create a loop (that goal is an ancestor of this one).";
-          return;
+  // Wrap the whole submit so a combined link+edit (or create) counts as one
+  // undoable action; the inner addLinkedChild/saveGoalEdit/addCustomChild
+  // calls collapse into this via withUndo's re-entrancy guard.
+  const submitLabel = goalMode === "edit" ? "Edited goal"
+    : goalLinkedExistingId ? (goalParentId ? "Linked goal" : "Edited goal")
+    : "Created goal";
+  let aborted = false;
+  withUndo(submitLabel, () => {
+    if (goalMode === "add") {
+      if (goalLinkedExistingId) {
+        // Under a parent, link the existing goal in as a prerequisite. At the top
+        // level there is no parent to link into, so just edit the existing goal.
+        if (goalParentId) {
+          const ok = addLinkedChild(goalParentId, goalLinkedExistingId);
+          if (!ok) {
+            linkNoticeEl.hidden = true;
+            errorEl.hidden = false;
+            errorEl.textContent = "Can't link that here — it would create a loop (that goal is an ancestor of this one).";
+            aborted = true;
+            return;
+          }
         }
+        // If the user changed anything after picking the suggestion, apply those
+        // changes to the linked goal.
+        const fields = currentGoalFields();
+        if (fields.title && goalLinkedSnapshot && JSON.stringify(fields) !== goalLinkedSnapshot) {
+          saveGoalEdit(goalLinkedExistingId, fields);
+        }
+      } else {
+        const title = nameInput.value.trim();
+        if (!title) { aborted = true; return; }
+        addCustomChild(goalParentId, title, {
+          type: typeSelect.value,
+          iconQuery: iconQueryInput.value.trim(),
+          linkQuery: linkQueryInput.value.trim(),
+          linkDisabled: linkDisabledCheckbox.checked,
+          description: descriptionInput.value.trim()
+        });
       }
-      // If the user changed anything after picking the suggestion, apply those
-      // changes to the linked goal.
-      const fields = currentGoalFields();
-      if (fields.title && goalLinkedSnapshot && JSON.stringify(fields) !== goalLinkedSnapshot) {
-        saveGoalEdit(goalLinkedExistingId, fields);
-      }
-    } else {
+    } else if (goalMode === "edit") {
       const title = nameInput.value.trim();
-      if (!title) return;
-      addCustomChild(goalParentId, title, {
-        type: typeSelect.value,
-        iconQuery: iconQueryInput.value.trim(),
-        linkQuery: linkQueryInput.value.trim(),
-        linkDisabled: linkDisabledCheckbox.checked,
-        description: descriptionInput.value.trim()
-      });
+      if (!title || !goalEditId) { aborted = true; return; }
+      saveGoalEdit(goalEditId, currentGoalFields());
     }
-  } else if (goalMode === "edit") {
-    const title = nameInput.value.trim();
-    if (!title || !goalEditId) return;
-    saveGoalEdit(goalEditId, currentGoalFields());
-  }
+  });
+  if (aborted) return;
   closeGoalModal();
 });
 
@@ -2327,16 +2423,18 @@ deleteBtn.addEventListener("click", () => {
 });
 
 function addCustomChild(parentId, title, opts) {
-  const id = uid();
-  state.customNodes[id] = { id, parentId: parentId || null, title, type: opts.type || "other" };
-  if (opts.iconQuery) state.customNodes[id].iconQuery = opts.iconQuery;
-  if (opts.linkQuery) state.customNodes[id].linkQuery = opts.linkQuery;
-  if (opts.description) state.customNodes[id].description = opts.description;
-  state.customNodes[id].linkDisabled = !!opts.linkDisabled;
-  if (parentId) state.collapsed[parentId] = false;
-  saveState();
-  render();
-  resolveAndStoreIconLink(id, true, opts.type || "other", opts.iconQuery || title, opts.linkDisabled ? null : (opts.linkQuery || title));
+  withUndo("Created goal", () => {
+    const id = uid();
+    state.customNodes[id] = { id, parentId: parentId || null, title, type: opts.type || "other" };
+    if (opts.iconQuery) state.customNodes[id].iconQuery = opts.iconQuery;
+    if (opts.linkQuery) state.customNodes[id].linkQuery = opts.linkQuery;
+    if (opts.description) state.customNodes[id].description = opts.description;
+    state.customNodes[id].linkDisabled = !!opts.linkDisabled;
+    if (parentId) state.collapsed[parentId] = false;
+    saveState();
+    render();
+    resolveAndStoreIconLink(id, true, opts.type || "other", opts.iconQuery || title, opts.linkDisabled ? null : (opts.linkQuery || title));
+  });
 }
 
 // Resolves icon/link for a node and persists the result, keyed off `type`:
@@ -2389,58 +2487,64 @@ function resolveAndStoreIconLink(id, isCustom, type, iconQuery, linkQuery) {
 }
 
 function saveGoalEdit(id, fields) {
-  const node = currentNodes[id];
-  const isCustom = !!node.custom;
-  const target = isCustom ? state.customNodes[id] : (state.overrides[id] = state.overrides[id] || {});
+  withUndo("Edited goal", () => {
+    const node = currentNodes[id];
+    const isCustom = !!node.custom;
+    const target = isCustom ? state.customNodes[id] : (state.overrides[id] = state.overrides[id] || {});
 
-  const typeChanged = fields.type !== node.type;
-  target.title = fields.title;
-  target.type = fields.type;
-  target.iconQuery = fields.iconQuery || undefined;
-  target.linkQuery = fields.linkQuery || undefined;
-  target.linkDisabled = fields.linkDisabled;
-  target.description = fields.description || undefined;
-  if (fields.linkDisabled) target.link = null;
+    const typeChanged = fields.type !== node.type;
+    target.title = fields.title;
+    target.type = fields.type;
+    target.iconQuery = fields.iconQuery || undefined;
+    target.linkQuery = fields.linkQuery || undefined;
+    target.linkDisabled = fields.linkDisabled;
+    target.description = fields.description || undefined;
+    if (fields.linkDisabled) target.link = null;
 
-  saveState();
-  render();
+    saveState();
+    render();
 
-  // Skill/quest resolution is deterministic, so always safe to (re)apply. For
-  // "other", built-in goals keep their curated icon/link unless the user typed
-  // an explicit override; custom goals always re-resolve.
-  const hadIcon = !!(node.iconUrl || (typeof resolveIconFile === "function" && resolveIconFile(node)));
-  const hadLink = !!node.link;
-  const iconQuery = fields.type !== "other" ? (fields.iconQuery || fields.title)
-    : fields.iconQuery || (isCustom || !hadIcon || typeChanged ? fields.title : "");
-  const linkQuery = fields.linkDisabled ? null
-    : fields.type !== "other" ? (fields.linkQuery || fields.title)
-    : fields.linkQuery || (isCustom || !hadLink || typeChanged ? fields.title : "");
-  resolveAndStoreIconLink(id, isCustom, fields.type, iconQuery, linkQuery);
+    // Skill/quest resolution is deterministic, so always safe to (re)apply. For
+    // "other", built-in goals keep their curated icon/link unless the user typed
+    // an explicit override; custom goals always re-resolve.
+    const hadIcon = !!(node.iconUrl || (typeof resolveIconFile === "function" && resolveIconFile(node)));
+    const hadLink = !!node.link;
+    const iconQuery = fields.type !== "other" ? (fields.iconQuery || fields.title)
+      : fields.iconQuery || (isCustom || !hadIcon || typeChanged ? fields.title : "");
+    const linkQuery = fields.linkDisabled ? null
+      : fields.type !== "other" ? (fields.linkQuery || fields.title)
+      : fields.linkQuery || (isCustom || !hadLink || typeChanged ? fields.title : "");
+    resolveAndStoreIconLink(id, isCustom, fields.type, iconQuery, linkQuery);
+  });
 }
 
 function removeGoal(id) {
   const node = currentNodes[id];
   if (!node) return;
-  if (node.custom) {
-    delete state.customNodes[id];
-  } else {
-    state.removed[id] = true;
-    delete state.overrides[id];
-  }
-  delete state.done[id];
-  if (state.rootGoals) delete state.rootGoals[id];
-  saveState();
-  render();
+  withUndo("Deleted goal", () => {
+    if (node.custom) {
+      delete state.customNodes[id];
+    } else {
+      state.removed[id] = true;
+      delete state.overrides[id];
+    }
+    delete state.done[id];
+    if (state.rootGoals) delete state.rootGoals[id];
+    saveState();
+    render();
+  });
 }
 
 // Returns true on success, false if it would create a cycle.
 function addLinkedChild(parentId, existingId) {
-  if (isAncestor(existingId, parentId, currentNodes)) return false;
-  addToLinkedEdges(parentId, existingId);
-  state.collapsed[parentId] = false;
-  saveState();
-  render();
-  return true;
+  return withUndo("Linked goal", () => {
+    if (isAncestor(existingId, parentId, currentNodes)) return false;
+    addToLinkedEdges(parentId, existingId);
+    state.collapsed[parentId] = false;
+    saveState();
+    render();
+    return true;
+  });
 }
 
 // --- Filter / toolbar ---------------------------------------------------------
@@ -2641,6 +2745,7 @@ profileImportInputEl.addEventListener("change", async () => {
     localStorage.setItem(storageKeyFor(id), JSON.stringify(migrated));
     saveProfilesMeta();
     state = loadState();
+    clearUndo();
     refreshProfileSelect();
     render();
     showToast(`Imported profile "${name}"`);

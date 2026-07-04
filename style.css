@@ -339,6 +339,26 @@ main#chart {
   font-size: 0.85rem;
 }
 
+.undo-toast {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 8px 8px 16px;
+}
+
+.undo-toast-btn {
+  background: var(--gold);
+  color: #1a1409;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.undo-toast-btn:hover { background: var(--gold-bright); }
+
 .graph-node.grid-mode {
   position: static;
 }
