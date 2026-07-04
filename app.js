@@ -51,6 +51,9 @@ function defaultState() {
   return {
     done: {}, order: {}, customNodes: {}, linkedEdges: {}, removedEdges: {},
     collapsed: {}, overrides: {}, removed: {}, username: "",
+    // Built-in goals detached from every parent, promoted to standalone
+    // top-level goals (kept alive past pruneRemoved). Keyed by node id.
+    rootGoals: {},
     // Lazily seeded from GEAR_GROUPS on first render; from then on it's the
     // user-editable source of truth for tier groupings.
     groupsState: null
@@ -72,6 +75,7 @@ function loadState() {
       overrides: parsed.overrides || {},
       removed: parsed.removed || {},
       username: parsed.username || "",
+      rootGoals: parsed.rootGoals || {},
       groupsState: parsed.groupsState || null
     });
   } catch (e) {
@@ -316,6 +320,9 @@ function pruneRemoved(nodes, originalRootIds) {
     changed = false;
     Object.keys(nodes).forEach(id => {
       if (originalRootIds.has(id)) return;
+      // A goal the user detached from all parents survives as a standalone
+      // top-level goal instead of being cascade-pruned.
+      if (state.rootGoals && state.rootGoals[id]) return;
       const n = nodes[id];
       if (n && n.parentIds.length === 0) {
         delete nodes[id];
@@ -1787,6 +1794,32 @@ function reparentNode(childId, oldParentId, newParentId) {
 function addToLinkedEdges(parentId, childId) {
   if (!state.linkedEdges[parentId]) state.linkedEdges[parentId] = [];
   if (!state.linkedEdges[parentId].includes(childId)) state.linkedEdges[parentId].push(childId);
+  // It has a parent again, so it's no longer a promoted standalone root.
+  if (state.rootGoals) delete state.rootGoals[childId];
+}
+
+// Removes the edge parentId -> childId, whichever mechanism created it: a
+// custom node's primary parent link, a manually linked edge, or a built-in
+// tree edge (recorded as a detachment). Mirrors reparentNode's branching.
+function detachEdge(parentId, childId) {
+  const custom = state.customNodes[childId];
+  const linked = state.linkedEdges[parentId];
+  if (custom && custom.parentId === parentId) {
+    custom.parentId = null;
+  } else if (linked && linked.includes(childId)) {
+    state.linkedEdges[parentId] = linked.filter(x => x !== childId);
+    if (!state.linkedEdges[parentId].length) delete state.linkedEdges[parentId];
+  } else {
+    if (!state.removedEdges[parentId]) state.removedEdges[parentId] = [];
+    if (!state.removedEdges[parentId].includes(childId)) state.removedEdges[parentId].push(childId);
+  }
+  // If this was the child's last parent, keep it as a standalone top-level
+  // goal rather than letting pruneRemoved cascade it away.
+  const child = currentNodes[childId];
+  const remaining = child ? child.parentIds.filter(p => p !== parentId) : [];
+  if (!remaining.length) state.rootGoals[childId] = true;
+  saveState();
+  render();
 }
 
 // --- Right-click context menu --------------------------------------------------
@@ -1915,6 +1948,13 @@ const linkPreviewEl = document.getElementById("goalLinkPreview");
 const descriptionInput = document.getElementById("goalDescription");
 const suggestionsEl = document.getElementById("goalSuggestions");
 const linkNoticeEl = document.getElementById("goalLinkNotice");
+const linksSectionEl = document.getElementById("goalLinksSection");
+const childLinksEl = document.getElementById("goalChildLinks");
+const childAddInput = document.getElementById("goalChildAddInput");
+const childAddSuggestionsEl = document.getElementById("goalChildAddSuggestions");
+const parentLinksEl = document.getElementById("goalParentLinks");
+const parentAddInput = document.getElementById("goalParentAddInput");
+const parentAddSuggestionsEl = document.getElementById("goalParentAddSuggestions");
 const errorEl = document.getElementById("goalError");
 const cancelBtn = document.getElementById("goalCancel");
 const deleteBtn = document.getElementById("goalDelete");
@@ -2055,6 +2095,103 @@ function fillGoalFieldsFromNode(node) {
   linkPreviewEl.textContent = source.linkDisabled ? "No wiki link" : (node.link ? "→ " + (node.note || node.title) : "—");
 }
 
+// A "goal · ×" row for the edit-mode links lists.
+function makeLinkRow(title, onRemove) {
+  const row = document.createElement("div");
+  row.className = "goal-link-row";
+  const label = document.createElement("span");
+  label.className = "goal-link-title";
+  label.textContent = title;
+  row.appendChild(label);
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "goal-link-remove";
+  btn.textContent = "×";
+  btn.title = "Remove link";
+  btn.addEventListener("click", () => { onRemove(); refreshGoalLinksOrClose(); });
+  row.appendChild(btn);
+  return row;
+}
+
+function emptyLinkHint(text) {
+  const p = document.createElement("div");
+  p.className = "goal-link-empty";
+  p.textContent = text;
+  return p;
+}
+
+// Populates the sub-goal (child) and unlocks (parent) lists for the goal being
+// edited, with a remove button per link.
+function renderGoalLinks(id) {
+  const node = currentNodes[id];
+  if (!node) { linksSectionEl.hidden = true; return; }
+  linksSectionEl.hidden = false;
+
+  childLinksEl.innerHTML = "";
+  node.childIds.forEach(cid => {
+    const c = currentNodes[cid];
+    childLinksEl.appendChild(makeLinkRow(c ? c.title : cid, () => detachEdge(id, cid)));
+  });
+  if (!node.childIds.length) childLinksEl.appendChild(emptyLinkHint("No sub-goals yet."));
+
+  parentLinksEl.innerHTML = "";
+  node.parentIds.forEach(pid => {
+    const p = currentNodes[pid];
+    parentLinksEl.appendChild(makeLinkRow(p ? p.title : pid, () => detachEdge(pid, id)));
+  });
+  if (!node.parentIds.length) parentLinksEl.appendChild(emptyLinkHint("Not a prerequisite of anything yet."));
+
+  childAddInput.value = ""; childAddSuggestionsEl.innerHTML = "";
+  parentAddInput.value = ""; parentAddSuggestionsEl.innerHTML = "";
+}
+
+// After a link edit, the edited node may have been pruned (a built-in goal that
+// lost its only parent); if so, close the modal, otherwise refresh the lists.
+function refreshGoalLinksOrClose() {
+  if (goalMode !== "edit" || !goalEditId) return;
+  if (!currentNodes[goalEditId]) { closeGoalModal(); showToast("Goal removed (it had no remaining links)."); return; }
+  renderGoalLinks(goalEditId);
+}
+
+// Wires an add-link input: typing filters existing goals (excluding self,
+// already-linked, and any that would create a cycle); picking one links it.
+// direction "child": edited goal -> picked (picked becomes a sub-goal).
+// direction "parent": picked -> edited goal (edited becomes a sub-goal).
+function wireLinkAdder(input, suggestionsBox, direction) {
+  input.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    suggestionsBox.innerHTML = "";
+    const node = goalEditId && currentNodes[goalEditId];
+    if (!node || q.length < 2) return;
+    const linkedSet = new Set(direction === "child" ? node.childIds : node.parentIds);
+    const matches = Object.values(currentNodes).filter(n => {
+      if (n.id === goalEditId || linkedSet.has(n.id)) return false;
+      if (!n.title.toLowerCase().includes(q)) return false;
+      // Cycle guard, matching addLinkedChild's check for each direction.
+      return direction === "child"
+        ? !isAncestor(n.id, goalEditId, currentNodes)
+        : !isAncestor(goalEditId, n.id, currentNodes);
+    }).slice(0, 6);
+    matches.forEach(n => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "suggestion-chip";
+      chip.textContent = n.title;
+      chip.addEventListener("click", () => {
+        const ok = direction === "child"
+          ? addLinkedChild(goalEditId, n.id)
+          : addLinkedChild(n.id, goalEditId);
+        if (ok) refreshGoalLinksOrClose();
+      });
+      suggestionsBox.appendChild(chip);
+    });
+  });
+}
+
+wireLinkAdder(childAddInput, childAddSuggestionsEl, "child");
+wireLinkAdder(parentAddInput, parentAddSuggestionsEl, "parent");
+
 function openAddGoalModal(parentId) {
   goalMode = "add";
   goalParentId = parentId || null;
@@ -2063,9 +2200,8 @@ function openAddGoalModal(parentId) {
   modalTitleEl.textContent = goalParentId ? "Add sub-goal" : "Add goal";
   submitBtn.textContent = "Add";
   deleteBtn.hidden = true;
-  // Suggestions link an existing goal in as a prerequisite of the parent, so
-  // they only apply when adding under a parent, not for a top-level goal.
-  suggestionsEl.hidden = !goalParentId;
+  suggestionsEl.hidden = false;
+  linksSectionEl.hidden = true; // link management is edit-only
   modalEl.hidden = false;
   nameInput.focus();
 }
@@ -2082,11 +2218,13 @@ function openEditGoalModal(id) {
   submitBtn.textContent = "Save";
   deleteBtn.hidden = false;
   suggestionsEl.hidden = true;
+  renderGoalLinks(id);
   modalEl.hidden = false;
   nameInput.focus();
 }
 
 function closeGoalModal() {
+  linksSectionEl.hidden = true;
   modalEl.hidden = true;
   goalParentId = null;
   goalEditId = null;
@@ -2105,7 +2243,7 @@ document.addEventListener("keydown", e => {
 });
 
 nameInput.addEventListener("input", () => {
-  if (goalMode !== "add" || !goalParentId) return; // no prerequisite suggestions for a top-level goal
+  if (goalMode !== "add") return;
   const q = nameInput.value.trim().toLowerCase();
   // Clearing the name unlinks; other edits keep the link and will edit the
   // linked goal on submit.
@@ -2128,6 +2266,11 @@ nameInput.addEventListener("input", () => {
       goalLinkedExistingId = n.id;
       fillGoalFieldsFromNode(n);
       goalLinkedSnapshot = JSON.stringify(currentGoalFields());
+      // Under a parent the pick links the goal in as a prerequisite; at the top
+      // level there is nothing to link into, so it just edits the existing goal.
+      linkNoticeEl.textContent = goalParentId
+        ? "✓ This will link the existing goal here instead of creating a duplicate, and completing it anywhere completes it everywhere. Change any field to update the linked goal, or clear the name to unlink."
+        : "✓ This matches an existing goal. Submitting will edit that goal instead of creating a duplicate. Clear the name to start fresh.";
       linkNoticeEl.hidden = false;
       suggestionsEl.innerHTML = "";
     });
@@ -2141,13 +2284,16 @@ modalForm.addEventListener("submit", e => {
 
   if (goalMode === "add") {
     if (goalLinkedExistingId) {
-      if (!goalParentId) return; // linking a prerequisite needs a parent
-      const ok = addLinkedChild(goalParentId, goalLinkedExistingId);
-      if (!ok) {
-        linkNoticeEl.hidden = true;
-        errorEl.hidden = false;
-        errorEl.textContent = "Can't link that here — it would create a loop (that goal is an ancestor of this one).";
-        return;
+      // Under a parent, link the existing goal in as a prerequisite. At the top
+      // level there is no parent to link into, so just edit the existing goal.
+      if (goalParentId) {
+        const ok = addLinkedChild(goalParentId, goalLinkedExistingId);
+        if (!ok) {
+          linkNoticeEl.hidden = true;
+          errorEl.hidden = false;
+          errorEl.textContent = "Can't link that here — it would create a loop (that goal is an ancestor of this one).";
+          return;
+        }
       }
       // If the user changed anything after picking the suggestion, apply those
       // changes to the linked goal.
@@ -2282,6 +2428,7 @@ function removeGoal(id) {
     delete state.overrides[id];
   }
   delete state.done[id];
+  if (state.rootGoals) delete state.rootGoals[id];
   saveState();
   render();
 }

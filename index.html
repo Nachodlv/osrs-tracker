@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Iron Tracker</title>
-<link rel="stylesheet" href="style.css?v=28" />
+<link rel="stylesheet" href="style.css?v=31" />
 </head>
 <body>
   <header class="topbar">
@@ -96,6 +96,21 @@
         <textarea id="goalDescription" rows="3" placeholder="e.g. Buy supplies from the GE first, then teleport to..."></textarea>
       </label>
 
+      <div id="goalLinksSection" class="goal-links" hidden>
+        <div class="goal-links-group">
+          <div class="goal-links-title">Sub-goals <span class="modal-hint">(prerequisites of this goal)</span></div>
+          <div id="goalChildLinks" class="goal-links-list"></div>
+          <input id="goalChildAddInput" type="text" autocomplete="off" class="goal-link-add-input" placeholder="Link an existing goal as a sub-goal…" />
+          <div id="goalChildAddSuggestions" class="suggestions"></div>
+        </div>
+        <div class="goal-links-group">
+          <div class="goal-links-title">Unlocks <span class="modal-hint">(goals this is a prerequisite of)</span></div>
+          <div id="goalParentLinks" class="goal-links-list"></div>
+          <input id="goalParentAddInput" type="text" autocomplete="off" class="goal-link-add-input" placeholder="Link this goal as a sub-goal of…" />
+          <div id="goalParentAddSuggestions" class="suggestions"></div>
+        </div>
+      </div>
+
       <p id="goalError" class="error-notice" hidden></p>
 
       <div class="modal-actions">
@@ -142,8 +157,8 @@
     </div>
   </div>
 
-  <script src="migration.js?v=28"></script>
-  <script src="data.js?v=28"></script>
-  <script src="app.js?v=28"></script>
+  <script src="migration.js?v=31"></script>
+  <script src="data.js?v=31"></script>
+  <script src="app.js?v=31"></script>
 </body>
 </html>

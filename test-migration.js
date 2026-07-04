@@ -149,6 +149,13 @@ test("remaps ids inside groupsState.groups", () => {
   assert.deepStrictEqual(migrated.groupsState.groups.g0, ["gear.amulet-of-strength", "herb-run.weiss.arm"]);
 });
 
+test("remaps rootGoals keys", () => {
+  const save = makeTuuxSoloSave();
+  save.rootGoals = { "gear-progression.tier5.piety": true, "herb-run.weiss.arm": true };
+  const migrated = migrateStateData(save);
+  assert.deepStrictEqual(migrated.rootGoals, { "gear.piety": true, "herb-run.weiss.arm": true });
+});
+
 test("handles a missing/undefined state gracefully (no crash)", () => {
   assert.strictEqual(migrateStateData(null), null);
   assert.strictEqual(migrateStateData(undefined), undefined);

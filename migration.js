@@ -157,6 +157,7 @@ function migrateStateData(parsed) {
   if (parsed.order) parsed.order = remapKeyedObject(parsed.order);
   if (parsed.collapsed) parsed.collapsed = remapKeyedObject(parsed.collapsed);
   if (parsed.removed) parsed.removed = remapKeyedObject(parsed.removed);
+  if (parsed.rootGoals) parsed.rootGoals = remapKeyedObject(parsed.rootGoals);
   if (parsed.overrides) parsed.overrides = remapKeyedObject(parsed.overrides);
   if (parsed.customNodes) {
     Object.values(parsed.customNodes).forEach(custom => {
