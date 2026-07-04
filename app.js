@@ -2755,12 +2755,20 @@ profileImportInputEl.addEventListener("change", async () => {
 });
 
 // --- Hiscores sync --------------------------------------------------------------
-// Fetches a player's skill levels through the local server.py proxy (the
-// hiscores endpoint has no CORS headers) and marks auto-tracked skill goals
-// done once the required level is reached.
+// Fetches a player's skill levels through a CORS proxy (the hiscores endpoint
+// has no CORS headers) and marks auto-tracked skill goals done once the required
+// level is reached. Local dev via server.py exposes a same-origin proxy at
+// /api/hiscores; static hosting (e.g. GitHub Pages) uses the Cloudflare Worker.
+const HISCORES_WORKER_URL = "https://osrs-hiscores.nachodelavega97.workers.dev";
+
+function hiscoresEndpoint(username) {
+  const q = "player=" + encodeURIComponent(username);
+  const isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+  return isLocal ? `/api/hiscores?${q}` : `${HISCORES_WORKER_URL}/?${q}`;
+}
 
 async function fetchHiscores(username) {
-  const res = await fetch(`/api/hiscores?player=${encodeURIComponent(username)}`);
+  const res = await fetch(hiscoresEndpoint(username));
   let data = null;
   try { data = await res.json(); } catch (e) { /* fall through to error below */ }
   if (!res.ok || !data || !data.skills) {
