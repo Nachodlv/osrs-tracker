@@ -9,6 +9,7 @@ OSRS ironman goal tracker (based on ladlorchart.com). Vanilla JS/HTML/CSS, no bu
 - `data.js` — static goal tree (`GOAL_DATA`), tier groupings (`GEAR_GROUPS`), skill/quest icon+link resolution helpers. Node ids must stay stable (see Migrations).
 - `migration.js` — pure save-data migration (`ID_MIGRATIONS`, `migrateStateData`). No DOM/localStorage; loadable as `<script>` and via `require()`.
 - `test-migration.js` — Node test runner for migration logic.
+- `test-app.js` — Node test runner for app graph/state logic (loads the scripts into a vm with a DOM stub; covers `getGraph`, `computeVisibility`, `addLinkedChild`, `reparentNode`, tier-group visibility).
 - `server.py` — static server + `/api/hiscores` proxy (hiscores has no CORS headers). Hiscores sync only works through this, not a plain static server.
 
 ## Rules
@@ -19,12 +20,12 @@ OSRS ironman goal tracker (based on ladlorchart.com). Vanilla JS/HTML/CSS, no bu
 - Migration must stay idempotent (safe to run on every load — there's an eager migration pass over all profiles at startup).
 
 ### Tests
-- Run `node test-migration.js` after ANY change to data ids, state shape, or migration logic. All tests must pass before finishing.
-- App logic can be smoke-tested headlessly: load `migration.js` + `data.js` + `app.js` into a Node `vm` context with a minimal DOM stub (getElementById returning stub elements, localStorage as a Map). Note: top-level `let`/`const` in the scripts are not reachable as properties of the vm context object — run assertion code *inside* the context with `vm.runInContext`.
+- Run `node test-migration.js` after ANY change to data ids, state shape, or migration logic, and `node test-app.js` after changes to graph/state/render logic. All tests must pass before finishing.
+- `test-app.js` already implements the headless harness (vm context + DOM stub, scripts loaded from `migration.js` + `data.js` + `app.js`). Prefer adding a case there over `preview_eval` for graph/state/layout bugs. Note: top-level `let`/`const` (e.g. `state`, `currentNodes`) are not reachable as context properties, so `inCtx()` runs assertion code *inside* the context via `vm.runInContext`; `function` declarations (`getGraph`, `reparentNode`, `computeVisibility`, ...) are reachable. Custom goals in tests use type `"quest"` to stay deterministic (no network fetch). CSS and real pixel rendering still need the preview tools.
 - When testing in the browser: create a NEW profile for testing. Never test against the TuuxSolo profile — it holds real progress.
 
 ### Conventions
-- Bump the `?v=N` cache-buster in index.html on every change to js/css files. **Currently at `?v=36`.**
+- Bump the `?v=N` cache-buster in index.html on every change to js/css files (bump all four references together; grep `?v=` to find the current value).
 - Keep it dependency-free vanilla JS; single files, no modules/bundler.
 - Comments: brief and functional only. No history/changelog-style comments. No em dashes ("—") in comments/commit messages/markdown; use commas/periods.
 - New user-facing state edits go through `saveState()` + `render()`; `render()` must never leave the page blank (renderUnsafe builds off-screen; the wrapper keeps the last good render on error).
@@ -36,13 +37,12 @@ OSRS ironman goal tracker (based on ladlorchart.com). Vanilla JS/HTML/CSS, no bu
 - Commit/push only when asked. User works directly on `master` (repo: github.com/Nachodlv/osrs-tracker). Commit trailer: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`. Keep commit bodies to one short paragraph.
 - Node isn't on the shell PATH; in PowerShell prepend it: `$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")`.
 - Local dev server: `.claude/launch.json` config named `iron-tracker-server` (python server.py). `state` and other top-level `let`/`const` are NOT on `window`; `function` declarations (e.g. `getGraph`, `reparentNode`, `render`) ARE, so use those from `preview_eval`.
+- When probing state via `preview_eval` (or the headless harness), return only the booleans/counts/ids you actually need, never a full node list or all titles (there are ~200 goals; one such dump is thousands of tokens). Prefer `.length`, `!!nodes[id]`, `n.parentIds`, etc. Better still, reproduce graph/state bugs in `test-app.js` (see Tests) instead of the browser.
 
-## Current state (resume context)
-- **`state.rootGoals`** ({id:true}): built-in goals detached from every parent are promoted here so they survive `pruneRemoved` as standalone top-level goals (custom nodes do this via `parentId:null`). Defaulted, remapped in `migrateStateData`, tested (15 migration tests).
+## Key state fields
+- **`state.rootGoals`** ({id:true}): built-in goals detached from every parent are promoted here so they survive `pruneRemoved` as standalone top-level goals (custom nodes do this via `parentId:null`). Defaulted, remapped in `migrateStateData`, tested.
+- **`state.groupsState`** ({groupOrder, groups}): tier groups, seeded from `GEAR_GROUPS` on first render then user-editable. A group member renders in its group box whenever it is visible (see `computeVisibility`'s `rootLike` arg), even if it also has a parent, so a grouped goal linked as a child shows in both places.
 - **Hiscores**: `hiscoresEndpoint()` uses server.py's `/api/hiscores` on localhost, else the Cloudflare Worker `https://osrs-hiscores.nachodelavega97.workers.dev` (code in `cloudflare-worker/`, `ALLOW_ORIGIN` currently `*`). So the app can run as a static site (e.g. GitHub Pages) without server.py; only hiscores needs the proxy.
-- **Edge retargeting**: each edge now renders TWO grab handles (parent end + child end), both reparenting the child — the child-end handle stays grabbable when a parent's children stack their handles at the one parent.
-- **`getEffectiveTree`** builds custom nodes in TWO passes (register all, then attach) so a custom node parented by another custom node resolves regardless of order — a single pass dropped such nodes (they disappeared on reparent).
-- **Uncommitted**: the `getEffectiveTree` two-pass + `reparentNode` clean-move fix (`app.js`, `?v=36`) is not yet committed. Last commit `ef75848` (Cloudflare Worker) is pushed.
 
 ## Architecture notes worth knowing
 

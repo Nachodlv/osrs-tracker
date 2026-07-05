@@ -916,6 +916,10 @@ button.add-link:hover {
   gap: 14px;
 }
 
+/* The class rule above would otherwise override the [hidden] attribute, so the
+   edit-only links section leaked into add mode showing the last goal's links. */
+.goal-links[hidden] { display: none; }
+
 .goal-links-group { display: flex; flex-direction: column; gap: 6px; }
 
 .goal-links-title {

@@ -491,13 +491,16 @@ function isExpandedState(id) {
 }
 
 // A node is visible if it's a root or has at least one visible, expanded parent.
-function computeVisibility(nodes) {
+// `rootLike` ids are shown at top level regardless of parents (tier-group
+// members keep their group slot even after being linked as a child elsewhere,
+// so they render in both places).
+function computeVisibility(nodes, rootLike) {
   const vis = {};
   function isVis(id) {
     if (vis[id] != null) return vis[id];
     vis[id] = true; // cycle guard
     const n = nodes[id];
-    if (!n.parentIds.length) { vis[id] = true; return true; }
+    if (!n.parentIds.length || (rootLike && rootLike.has(id))) { vis[id] = true; return true; }
     const v = n.parentIds.some(pid => isVis(pid) && isExpandedState(pid));
     vis[id] = v;
     return v;
@@ -659,7 +662,15 @@ function renderUnsafe() {
   const rsnEl = document.getElementById("rsnInput");
   if (rsnEl && document.activeElement !== rsnEl) rsnEl.value = state.username || "";
 
-  const visibility = computeVisibility(nodes);
+  // Tier-group members render at top level (in their group box) even if they
+  // have also been linked as a child of another goal, so seed them as root-like
+  // before computing visibility.
+  ensureGroupsState();
+  const groupedIdSet = new Set();
+  state.groupsState.groupOrder.forEach(gid =>
+    (state.groupsState.groups[gid] || []).forEach(id => groupedIdSet.add(id)));
+
+  const visibility = computeVisibility(nodes, groupedIdSet);
   const visibleIds = Object.keys(nodes).filter(id => visibility[id]);
   lastVisibleIds = visibleIds;
 
@@ -672,16 +683,15 @@ function renderUnsafe() {
   // Every root goal flows together in one wrapping row: collapsed/childless
   // roots are a single small card; expanded ones render their local dependency
   // tree inline, right where that root sits among its siblings.
-  let rootIds = visibleIds.filter(id => nodes[id].parentIds.length === 0);
-  if (hideCompleted || hideIncomplete) {
-    rootIds = rootIds.filter(id => {
-      const p = progressOf(id, nodes, progressMemo);
-      const isDone = p.total > 0 && p.completed === p.total;
-      if (hideCompleted && isDone) return false;
-      if (hideIncomplete && !isDone) return false;
-      return true;
-    });
-  }
+  const passesHideFilter = id => {
+    if (!hideCompleted && !hideIncomplete) return true;
+    const p = progressOf(id, nodes, progressMemo);
+    const isDone = p.total > 0 && p.completed === p.total;
+    if (hideCompleted && isDone) return false;
+    if (hideIncomplete && !isDone) return false;
+    return true;
+  };
+  let rootIds = visibleIds.filter(id => nodes[id].parentIds.length === 0 && passesHideFilter(id));
   const rootIdSet = new Set(rootIds);
 
   function renderRoot(rootId, container) {
@@ -786,10 +796,7 @@ function renderUnsafe() {
 
   // Ungrouped goals keep the free-flowing, reorderable order at the start;
   // grouped goals render clustered into their tier's box, in group order.
-  ensureGroupsState();
-  const groupedIdSet = new Set();
-  state.groupsState.groupOrder.forEach(gid => (state.groupsState.groups[gid] || []).forEach(id => groupedIdSet.add(id)));
-
+  // (groupedIdSet was seeded above for visibility.)
   const ungroupedRoots = rootIds.filter(id => !groupedIdSet.has(id));
   ungroupedRoots.sort((a, b) => effectiveOrder(a, discoveryOrder) - effectiveOrder(b, discoveryOrder));
   lastRootOrder = ungroupedRoots;
@@ -805,11 +812,15 @@ function renderUnsafe() {
   // drag's bubbling events.
   ungroupedRoots.forEach(rootId => renderRoot(rootId, flowEl));
 
+  // A grouped goal keeps its group slot whenever it is visible and passes the
+  // hide filter, even if it now also has a parent (so it renders here and under
+  // that parent both).
+  const groupMemberShown = id => !!nodes[id] && visibility[id] && passesHideFilter(id);
   const visibleGroupIds = state.groupsState.groupOrder.filter(gid =>
-    (state.groupsState.groups[gid] || []).some(id => rootIdSet.has(id)));
+    (state.groupsState.groups[gid] || []).some(groupMemberShown));
 
   visibleGroupIds.forEach((gid, i) => {
-    const visibleMembers = state.groupsState.groups[gid].filter(id => rootIdSet.has(id));
+    const visibleMembers = state.groupsState.groups[gid].filter(groupMemberShown);
     const groupEl = document.createElement("div");
     groupEl.className = "gear-group";
     groupEl.dataset.groupId = gid;
@@ -2187,6 +2198,12 @@ function resetGoalModalFields() {
   errorEl.hidden = true;
   goalLinkedExistingId = null;
   goalLinkedSnapshot = null;
+  // Clear any leftover links from a previously edited goal so add mode never
+  // shows stale parent/child rows.
+  childLinksEl.innerHTML = "";
+  parentLinksEl.innerHTML = "";
+  childAddInput.value = ""; childAddSuggestionsEl.innerHTML = "";
+  parentAddInput.value = ""; parentAddSuggestionsEl.innerHTML = "";
 }
 
 // Fills the form from an existing node (used by add-mode autocomplete and edit mode).
