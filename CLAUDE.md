@@ -24,10 +24,25 @@ OSRS ironman goal tracker (based on ladlorchart.com). Vanilla JS/HTML/CSS, no bu
 - When testing in the browser: create a NEW profile for testing. Never test against the TuuxSolo profile — it holds real progress.
 
 ### Conventions
-- Bump the `?v=N` cache-buster in index.html on every change to js/css files.
+- Bump the `?v=N` cache-buster in index.html on every change to js/css files. **Currently at `?v=36`.**
 - Keep it dependency-free vanilla JS; single files, no modules/bundler.
-- Comments: brief and functional only. No history/changelog-style comments.
+- Comments: brief and functional only. No history/changelog-style comments. No em dashes ("—") in comments/commit messages/markdown; use commas/periods.
 - New user-facing state edits go through `saveState()` + `render()`; `render()` must never leave the page blank (renderUnsafe builds off-screen; the wrapper keeps the last good render on error).
+- Every mutating user action is wrapped in `withUndo(label, fn)` (snapshots serialized state, shows a bottom undo toast). New actions that change state should be wrapped too; nested calls collapse via a re-entrancy guard.
+- Output only the modified or requested code block.
+
+### Working style (user preferences)
+- Do git, tests (`node test-migration.js`), and browser preview (preview_* tools) INLINE by default — do NOT spawn subagents for them (a subagent cold-start costs ~30k tokens, ~10x inline). Delegate to a Sonnet 5 low-effort subagent only when context is heavy or the task is long/noisy; if you do, tell it to run the work itself and NEVER re-delegate (subagents recursing on the "delegate git" habit caused an infinite loop once).
+- Commit/push only when asked. User works directly on `master` (repo: github.com/Nachodlv/osrs-tracker). Commit trailer: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`. Keep commit bodies to one short paragraph.
+- Node isn't on the shell PATH; in PowerShell prepend it: `$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")`.
+- Local dev server: `.claude/launch.json` config named `iron-tracker-server` (python server.py). `state` and other top-level `let`/`const` are NOT on `window`; `function` declarations (e.g. `getGraph`, `reparentNode`, `render`) ARE, so use those from `preview_eval`.
+
+## Current state (resume context)
+- **`state.rootGoals`** ({id:true}): built-in goals detached from every parent are promoted here so they survive `pruneRemoved` as standalone top-level goals (custom nodes do this via `parentId:null`). Defaulted, remapped in `migrateStateData`, tested (15 migration tests).
+- **Hiscores**: `hiscoresEndpoint()` uses server.py's `/api/hiscores` on localhost, else the Cloudflare Worker `https://osrs-hiscores.nachodelavega97.workers.dev` (code in `cloudflare-worker/`, `ALLOW_ORIGIN` currently `*`). So the app can run as a static site (e.g. GitHub Pages) without server.py; only hiscores needs the proxy.
+- **Edge retargeting**: each edge now renders TWO grab handles (parent end + child end), both reparenting the child — the child-end handle stays grabbable when a parent's children stack their handles at the one parent.
+- **`getEffectiveTree`** builds custom nodes in TWO passes (register all, then attach) so a custom node parented by another custom node resolves regardless of order — a single pass dropped such nodes (they disappeared on reparent).
+- **Uncommitted**: the `getEffectiveTree` two-pass + `reparentNode` clean-move fix (`app.js`, `?v=36`) is not yet committed. Last commit `ef75848` (Cloudflare Worker) is pushed.
 
 ## Architecture notes worth knowing
 

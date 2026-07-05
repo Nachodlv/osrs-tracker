@@ -249,27 +249,37 @@ function getEffectiveTree() {
   }
   index(clone);
 
+  // Materialize every custom node and register it up front, so a custom node
+  // parented by another custom node resolves regardless of iteration order (a
+  // single pass would drop a child whose custom parent comes later).
+  const customObjs = {};
   Object.values(state.customNodes).forEach(custom => {
-    let parent = byId[custom.parentId];
-    if (!parent && byShared[custom.parentId] && byShared[custom.parentId].length) {
-      parent = byShared[custom.parentId][0];
-    }
-    // A parentless custom node (created from the empty-space menu) is a
-    // top-level goal; a node whose named parent no longer exists is dropped.
-    if (!parent && custom.parentId) return;
     const node = {
       id: custom.id, title: custom.title, type: custom.type || "other", children: [], custom: true,
       iconUrl: custom.iconUrl, description: custom.description,
       link: custom.linkDisabled ? null : (custom.link || null),
       note: custom.linkDisabled ? null : (custom.note || null)
     };
+    customObjs[custom.id] = node;
+    byId[custom.id] = node;
+  });
+
+  // Attach each custom node to its parent (a static node, a `shared` key, or
+  // another custom node), or make it a top-level goal if it has no parent. A
+  // node whose named parent no longer exists is dropped.
+  Object.values(state.customNodes).forEach(custom => {
+    const node = customObjs[custom.id];
+    let parent = byId[custom.parentId];
+    if (!parent && byShared[custom.parentId] && byShared[custom.parentId].length) {
+      parent = byShared[custom.parentId][0];
+    }
+    if (!parent && custom.parentId) return;
     if (parent) {
       if (!parent.children) parent.children = [];
       parent.children.push(node);
     } else {
       clone.push(node);
     }
-    byId[node.id] = node;
   });
 
   return { tree: clone, byId };
@@ -744,15 +754,20 @@ function renderUnsafe() {
         path.dataset.to = id;
         svg.appendChild(path);
 
-        // Drag handle at the parent end of the edge: drag it onto another node
-        // to move this child under that node instead.
-        const handle = document.createElementNS(SVG_NS, "circle");
-        handle.setAttribute("cx", x2 - 6);
-        handle.setAttribute("cy", y2);
-        handle.setAttribute("r", 7);
-        handle.setAttribute("class", "edge-handle");
-        handle.addEventListener("pointerdown", e => startEdgeRetarget(e, cid, id, svg, handle, x1, y1));
-        svg.appendChild(handle);
+        // Two grab handles per edge, both reparenting this child (drag onto
+        // another node to move it under that node). One sits at the parent end
+        // (the arrowhead) and one at the child end (the start). A goal with many
+        // children stacks every child's parent-end handle at the one parent, so
+        // the child-end handle, which is unique per child, stays grabbable.
+        [[x2 - 6, y2], [x1 + 6, y1]].forEach(([hx, hy]) => {
+          const handle = document.createElementNS(SVG_NS, "circle");
+          handle.setAttribute("cx", hx);
+          handle.setAttribute("cy", hy);
+          handle.setAttribute("r", 7);
+          handle.setAttribute("class", "edge-handle");
+          handle.addEventListener("pointerdown", e => startEdgeRetarget(e, cid, id, svg, handle, x1, y1));
+          svg.appendChild(handle);
+        });
       });
     });
     blockEl.appendChild(svg);
@@ -1796,8 +1811,9 @@ function moveNode(id, dir) {
 }
 
 // --- Edge retargeting -----------------------------------------------------------
-// Drag the handle at the parent end of an edge onto another node to make that
-// node the child's parent instead.
+// Drag either end of an edge (a handle at the parent end and one at the child
+// end) onto another node to make that node the child's parent instead. The
+// child end stays anchored (x1, y1); only the parent target changes.
 
 function startEdgeRetarget(e, childId, oldParentId, svg, handle, x1, y1) {
   e.preventDefault();
@@ -1855,16 +1871,23 @@ function reparentNode(childId, oldParentId, newParentId) {
   withUndo("Moved goal", () => {
     const custom = state.customNodes[childId];
     const linked = state.linkedEdges[oldParentId];
-    if (custom && custom.parentId === oldParentId) {
-      custom.parentId = newParentId;
-    } else if (linked && linked.includes(childId)) {
+    const hadManualLink = !!(linked && linked.includes(childId));
+    // Strip any manual link duplicating the old parent edge, so this is a
+    // clean move rather than leaving the old connection behind (a node can
+    // carry both a custom.parentId and a linkedEdge to the same parent).
+    if (hadManualLink) {
       state.linkedEdges[oldParentId] = linked.filter(x => x !== childId);
       if (!state.linkedEdges[oldParentId].length) delete state.linkedEdges[oldParentId];
-      addToLinkedEdges(newParentId, childId);
+    }
+    if (custom && custom.parentId === oldParentId) {
+      custom.parentId = newParentId;
     } else {
-      // Built-in tree edge: record the detachment, then re-attach as a link edge.
-      if (!state.removedEdges[oldParentId]) state.removedEdges[oldParentId] = [];
-      if (!state.removedEdges[oldParentId].includes(childId)) state.removedEdges[oldParentId].push(childId);
+      // Not the custom primary edge. If it wasn't a manual link either, it's a
+      // built-in tree edge, so record the detachment. Then attach the new edge.
+      if (!hadManualLink) {
+        if (!state.removedEdges[oldParentId]) state.removedEdges[oldParentId] = [];
+        if (!state.removedEdges[oldParentId].includes(childId)) state.removedEdges[oldParentId].push(childId);
+      }
       addToLinkedEdges(newParentId, childId);
     }
 
