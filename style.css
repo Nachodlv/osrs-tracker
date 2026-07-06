@@ -223,6 +223,9 @@ h1 {
   flex-direction: column;
   gap: 6px;
   min-width: 180px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 70px);
+  overflow-y: auto;
   padding: 8px;
   background: var(--bg-card);
   border: 1px solid var(--border-light);
