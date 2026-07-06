@@ -47,10 +47,30 @@ let profilesMeta = loadProfilesMeta();
   });
 })();
 
+// New saves start showing only the tier-group gear, with no sub-goals: every
+// ungrouped top-level goal and every sub-goal (children of any goal, grouped or
+// not) is removed by default. Existing saves keep their own stored `removed`.
+function defaultRemoved() {
+  if (typeof GOAL_DATA === "undefined") return {};
+  const grouped = {};
+  (typeof GEAR_GROUPS !== "undefined" ? GEAR_GROUPS : []).forEach(function (g) {
+    g.forEach(function (id) { grouped[id] = true; });
+  });
+  const removed = {};
+  (function walk(nodes, isTopLevel) {
+    (nodes || []).forEach(function (n) {
+      // Remove ungrouped top-level goals, and every sub-goal at any depth.
+      if (!isTopLevel || !grouped[n.id]) removed[n.id] = true;
+      walk(n.children, false);
+    });
+  })(GOAL_DATA, true);
+  return removed;
+}
+
 function defaultState() {
   return {
     done: {}, order: {}, customNodes: {}, linkedEdges: {}, removedEdges: {},
-    collapsed: {}, overrides: {}, removed: {}, username: "",
+    collapsed: {}, overrides: {}, removed: defaultRemoved(), username: "",
     // Built-in goals detached from every parent, promoted to standalone
     // top-level goals (kept alive past pruneRemoved). Keyed by node id.
     rootGoals: {},

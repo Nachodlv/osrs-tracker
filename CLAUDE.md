@@ -12,6 +12,14 @@ OSRS ironman goal tracker (based on ladlorchart.com). Vanilla JS/HTML/CSS, no bu
 - `test-app.js` — Node test runner for app graph/state logic (loads the scripts into a vm with a DOM stub; covers `getGraph`, `computeVisibility`, `addLinkedChild`, `reparentNode`, tier-group visibility).
 - `server.py` — static server + `/api/hiscores` proxy (hiscores has no CORS headers). Hiscores sync only works through this, not a plain static server.
 
+## Data model glossary (read this before opening data.js)
+
+Most graph/data questions can be answered from here without reading `data.js` (it's the largest file and every node is dense with title/icon/link). Open `data.js` only for exact ids, icons, or links.
+
+- `GOAL_DATA` has two kinds of top-level entry: (a) goals with nested `children` (sub-goal trees, e.g. `herb-run`, `piety`), and (b) a flat `gear.*` section (the "rest of Ladlor's chart") of parentless items with mostly empty `children`.
+- Grouped = an id listed in `GEAR_GROUPS` (all such ids are top-level goals). Ungrouped = a top-level goal not in any group. Sub-goal = any node reachable via `children` (at any depth). A few grouped members (e.g. `spirit-tree`, `mixed-hide-boots`) do carry sub-goals.
+- Hide a node for a profile by setting `state.removed[id] = true`; `pruneRemoved` deletes it and cascades to now-parentless descendants. `removed` is keyed by plain node id. New-save-only defaults belong in `defaultState()` (see `defaultRemoved()`); existing saves load their own stored `removed`, so they're untouched.
+
 ## Rules
 
 ### Migrations (critical — never lose saved progress)
@@ -38,6 +46,7 @@ OSRS ironman goal tracker (based on ladlorchart.com). Vanilla JS/HTML/CSS, no bu
 - Node isn't on the shell PATH; in PowerShell prepend it: `$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")`.
 - Local dev server: `.claude/launch.json` config named `iron-tracker-server` (python server.py). `state` and other top-level `let`/`const` are NOT on `window`; `function` declarations (e.g. `getGraph`, `reparentNode`, `render`) ARE, so use those from `preview_eval`.
 - When probing state via `preview_eval` (or the headless harness), return only the booleans/counts/ids you actually need, never a full node list or all titles (there are ~200 goals; one such dump is thousands of tokens). Prefer `.length`, `!!nodes[id]`, `n.parentIds`, etc. Better still, reproduce graph/state bugs in `test-app.js` (see Tests) instead of the browser.
+- For graph/data-model questions (grouped vs ungrouped, sub-goals, hiding nodes), consult the Data model glossary above before reading `data.js`; open `data.js` only for exact ids/icons/links.
 
 ## Key state fields
 - **`state.rootGoals`** ({id:true}): built-in goals detached from every parent are promoted here so they survive `pruneRemoved` as standalone top-level goals (custom nodes do this via `parentId:null`). Defaulted, remapped in `migrateStateData`, tested.

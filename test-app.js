@@ -184,6 +184,37 @@ test("addLinkedChild rejects a cycle", () => {
   assert.strictEqual(r.ok, false);
 });
 
+console.log("\nDefault save (new profiles)");
+
+test("new saves show only grouped gear, no ungrouped goals or sub-goals", () => {
+  const r = inCtx(`
+    state = defaultState();
+    const nodes = getGraph().nodes;
+    return {
+      grouped: !!nodes["gear.dragon-scimitar"],
+      ungrouped: !!nodes["herb-run"],
+      subgoal: !!nodes["spirit-tree.75construction"],
+      groupedSub: !!nodes["piety.70def"]
+    };
+  `);
+  assert.strictEqual(r.grouped, true, "grouped gear stays visible");
+  assert.strictEqual(r.ungrouped, false, "ungrouped top-level goal is removed");
+  assert.strictEqual(r.subgoal, false, "sub-goal of a grouped goal is removed");
+  assert.strictEqual(r.groupedSub, false, "sub-goal is removed");
+});
+
+test("existing saves keep their goals (don't inherit the new default removed)", () => {
+  const r = inCtx(`
+    // Simulate a pre-existing profile whose stored save removed nothing.
+    localStorage.setItem(storageKeyFor(profilesMeta.activeId), JSON.stringify({ done: {}, removed: {} }));
+    state = loadState();
+    const nodes = getGraph().nodes;
+    return { ungrouped: !!nodes["herb-run"], subgoal: !!nodes["piety.70def"] };
+  `);
+  assert.strictEqual(r.ungrouped, true, "stored save keeps its ungrouped goal");
+  assert.strictEqual(r.subgoal, true, "stored save keeps its sub-goals");
+});
+
 console.log("\n" + passed + " test(s) passed.");
 if (process.exitCode) console.error("Some app tests failed.");
 else console.log("All app tests passed.");
