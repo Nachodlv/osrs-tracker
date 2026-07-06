@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Iron Tracker</title>
-<link rel="stylesheet" href="style.css?v=39" />
+<link rel="stylesheet" href="style.css?v=40" />
 </head>
 <body>
   <header class="topbar">
@@ -26,6 +26,7 @@
             <button id="profileRenameBtn" title="Rename current profile">Rename</button>
             <button id="profileExportBtn" title="Download this profile as a file (import it in any other browser)">Export</button>
             <button id="profileImportBtn" title="Import a profile from an exported file">Import</button>
+            <button id="manageTemplatesBtn" title="Add or remove new-profile templates">Manage templates</button>
             <div class="popover-sep"></div>
             <button id="profileDeleteBtn" class="danger" title="Delete current profile">Delete profile</button>
             <button id="resetAll" class="danger">Reset progress</button>
@@ -159,6 +160,10 @@
         Name
         <input id="profileNameInput" type="text" autocomplete="off" placeholder="e.g. Main, Zerker, HCIM" required />
       </label>
+      <label class="modal-label" id="profileTemplateRow">
+        Template
+        <select id="profileTemplateSelect"></select>
+      </label>
       <div class="modal-actions">
         <button type="button" id="profileNameCancel">Cancel</button>
         <button type="submit" id="profileNameSubmit" class="primary">Create</button>
@@ -177,8 +182,22 @@
     </div>
   </div>
 
-  <script src="migration.js?v=39"></script>
-  <script src="data.js?v=39"></script>
-  <script src="app.js?v=39"></script>
+  <div id="templatesModal" class="modal-overlay" hidden>
+    <div class="modal-card">
+      <h2>Manage templates</h2>
+      <p class="modal-body-text">Templates are the starting chart a new profile is created from. Import a template JSON file to add one, or remove your own. Existing profiles are not affected.</p>
+      <ul id="templatesList" class="templates-list"></ul>
+      <div class="modal-actions">
+        <button type="button" id="templateImportBtn" class="primary">Import template</button>
+        <button type="button" id="templatesCloseBtn">Close</button>
+      </div>
+      <input id="templateImportInput" type="file" accept=".json,application/json" hidden />
+    </div>
+  </div>
+
+  <script src="migration.js?v=40"></script>
+  <script src="data.js?v=40"></script>
+  <script src="templates.js?v=40"></script>
+  <script src="app.js?v=40"></script>
 </body>
 </html>

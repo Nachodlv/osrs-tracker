@@ -7,7 +7,7 @@
 // - shared marks a requirement that unlocks multiple goals (e.g. Eagles' Peak). All
 //   nodes with the same `shared` key share one completion checkbox across the whole tree.
 
-const GOAL_DATA = [
+var GOAL_DATA = [
   {
     id: "herb-run",
     title: "Herb Run",
@@ -590,7 +590,7 @@ function resolveDefaultLink(node) {
 
 // ladlorchart.com's tier groupings as purely visual clusters (bordered boxes,
 // no dependency between members). Goals with no tier stay ungrouped.
-const GEAR_GROUPS = [
+var GEAR_GROUPS = [
   ["gear.amulet-of-strength", "gear.climbing-boots", "gear.rune-pouch"],
   ["gear.iban-s-staff-u", "gear.protect-from-melee", "gear.ancient-staff", "gear.eagle-eye"],
   ["gear.fighter-torso", "gear.granite-body"],

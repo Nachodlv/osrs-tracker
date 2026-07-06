@@ -30,6 +30,20 @@ function storageKeyFor(profileId) {
 
 let profilesMeta = loadProfilesMeta();
 
+// Point the global goal data at a profile's chosen template before its state is
+// built or rendered. Profiles saved before templates existed have no templateId
+// and fall back to the default (Ladlor) template, so they are unaffected.
+function templateIdFor(profileId) {
+  const p = profilesMeta.profiles[profileId];
+  return (p && p.templateId) || Templates.DEFAULT_TEMPLATE_ID;
+}
+
+function applyProfileTemplate(profileId) {
+  Templates.applyTemplate(templateIdFor(profileId));
+}
+
+applyProfileTemplate(profilesMeta.activeId);
+
 // Eagerly migrate every profile's saved data (not just the active one) so no
 // profile's progress goes stale after an id rename — see migration.js.
 (function migrateAllProfilesEagerly() {
@@ -114,19 +128,22 @@ function switchProfile(id) {
   if (!profilesMeta.profiles[id] || id === profilesMeta.activeId) return;
   profilesMeta.activeId = id;
   saveProfilesMeta();
+  applyProfileTemplate(id);
   state = loadState();
   clearUndo();
   refreshProfileSelect();
   render();
 }
 
-function createProfile(name) {
+function createProfile(name, templateId) {
   const trimmed = (name || "").trim();
   if (!trimmed) return;
   const id = "p" + Date.now();
-  profilesMeta.profiles[id] = { name: trimmed };
+  const tpl = Templates.getTemplate(templateId) ? templateId : Templates.DEFAULT_TEMPLATE_ID;
+  profilesMeta.profiles[id] = { name: trimmed, templateId: tpl };
   profilesMeta.activeId = id;
   saveProfilesMeta();
+  applyProfileTemplate(id);
   state = loadState();
   clearUndo();
   refreshProfileSelect();
@@ -147,6 +164,7 @@ function deleteProfile(id) {
   delete profilesMeta.profiles[id];
   if (profilesMeta.activeId === id) {
     profilesMeta.activeId = Object.keys(profilesMeta.profiles)[0];
+    applyProfileTemplate(profilesMeta.activeId);
     state = loadState();
   }
   clearUndo();
@@ -2699,6 +2717,8 @@ const profileNameModalTitleEl = document.getElementById("profileNameModalTitle")
 const profileNameInputEl = document.getElementById("profileNameInput");
 const profileNameSubmitEl = document.getElementById("profileNameSubmit");
 const profileNameCancelEl = document.getElementById("profileNameCancel");
+const profileTemplateRowEl = document.getElementById("profileTemplateRow");
+const profileTemplateSelectEl = document.getElementById("profileTemplateSelect");
 
 const profileDeleteModalEl = document.getElementById("profileDeleteModal");
 const profileDeleteTextEl = document.getElementById("profileDeleteText");
@@ -2750,11 +2770,26 @@ document.addEventListener("keydown", (e) => {
 
 profileSelectEl.addEventListener("change", () => switchProfile(profileSelectEl.value));
 
+// Fill the new-profile modal's template picker from the current template list.
+function refreshTemplateSelect() {
+  if (!profileTemplateSelectEl) return;
+  profileTemplateSelectEl.innerHTML = "";
+  Templates.listTemplates().forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = t.id;
+    opt.textContent = t.name;
+    if (t.id === Templates.DEFAULT_TEMPLATE_ID) opt.selected = true;
+    profileTemplateSelectEl.appendChild(opt);
+  });
+}
+
 profileNewBtnEl.addEventListener("click", () => {
   profileNameMode = "new";
   profileNameModalTitleEl.textContent = "New profile";
   profileNameSubmitEl.textContent = "Create";
   profileNameInputEl.value = "";
+  refreshTemplateSelect();
+  profileTemplateRowEl.hidden = false;
   profileNameModalEl.hidden = false;
   profileNameInputEl.focus();
 });
@@ -2764,6 +2799,7 @@ profileRenameBtnEl.addEventListener("click", () => {
   profileNameModalTitleEl.textContent = "Rename profile";
   profileNameSubmitEl.textContent = "Save";
   profileNameInputEl.value = profilesMeta.profiles[profilesMeta.activeId].name;
+  profileTemplateRowEl.hidden = true;
   profileNameModalEl.hidden = false;
   profileNameInputEl.focus();
 });
@@ -2776,7 +2812,7 @@ profileNameFormEl.addEventListener("submit", e => {
   e.preventDefault();
   const name = profileNameInputEl.value.trim();
   if (!name) return;
-  if (profileNameMode === "new") createProfile(name);
+  if (profileNameMode === "new") createProfile(name, profileTemplateSelectEl.value);
   else renameProfile(profilesMeta.activeId, name);
   closeProfileNameModal();
 });
@@ -2799,6 +2835,7 @@ document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (!profileNameModalEl.hidden) closeProfileNameModal();
   if (!profileDeleteModalEl.hidden) closeProfileDeleteModal();
+  if (!templatesModalEl.hidden) closeTemplatesModal();
 });
 
 // --- Profile export / import -----------------------------------------------------
@@ -2812,6 +2849,7 @@ profileExportBtnEl.addEventListener("click", () => {
     app: "iron-tracker",
     version: 1,
     name,
+    templateId: templateIdFor(profilesMeta.activeId),
     exportedAt: new Date().toISOString(),
     state
   };
@@ -2841,10 +2879,12 @@ profileImportInputEl.addEventListener("change", async () => {
     let name = baseName, i = 2;
     while (names.has(name)) name = `${baseName} (${i++})`;
     const id = "p" + Date.now();
-    profilesMeta.profiles[id] = { name };
+    const tpl = Templates.getTemplate(payload.templateId) ? payload.templateId : Templates.DEFAULT_TEMPLATE_ID;
+    profilesMeta.profiles[id] = { name, templateId: tpl };
     profilesMeta.activeId = id;
     localStorage.setItem(storageKeyFor(id), JSON.stringify(migrated));
     saveProfilesMeta();
+    applyProfileTemplate(id);
     state = loadState();
     clearUndo();
     refreshProfileSelect();
@@ -2852,6 +2892,66 @@ profileImportInputEl.addEventListener("change", async () => {
     showToast(`Imported profile "${name}"`);
   } catch (e) {
     showToast("Import failed: " + e.message);
+  }
+});
+
+// --- Template management ---------------------------------------------------------
+// Add or remove new-profile templates. Built-in templates (Empty, Ladlor) are
+// read-only; user templates are imported from JSON files and stored in
+// localStorage. Removing a template never touches profiles already created from
+// it (their saved state is self-contained).
+
+const manageTemplatesBtnEl = document.getElementById("manageTemplatesBtn");
+const templatesModalEl = document.getElementById("templatesModal");
+const templatesListEl = document.getElementById("templatesList");
+const templatesCloseBtnEl = document.getElementById("templatesCloseBtn");
+const templateImportBtnEl = document.getElementById("templateImportBtn");
+const templateImportInputEl = document.getElementById("templateImportInput");
+
+function renderTemplatesList() {
+  templatesListEl.innerHTML = "";
+  Templates.listTemplates().forEach(t => {
+    const li = document.createElement("li");
+    li.className = "templates-list-item";
+    const label = document.createElement("span");
+    label.className = "templates-list-name";
+    const count = (t.goalData || []).length;
+    label.textContent = t.name + (t.builtin ? " (built-in)" : "") + " — " + count + " top-level goals";
+    li.appendChild(label);
+    if (!t.builtin) {
+      const rm = document.createElement("button");
+      rm.className = "danger";
+      rm.textContent = "Remove";
+      rm.addEventListener("click", () => {
+        Templates.removeUserTemplate(t.id);
+        renderTemplatesList();
+        showToast(`Removed template "${t.name}"`);
+      });
+      li.appendChild(rm);
+    }
+    templatesListEl.appendChild(li);
+  });
+}
+
+function openTemplatesModal() { renderTemplatesList(); templatesModalEl.hidden = false; }
+function closeTemplatesModal() { templatesModalEl.hidden = true; }
+
+if (manageTemplatesBtnEl) manageTemplatesBtnEl.addEventListener("click", openTemplatesModal);
+templatesCloseBtnEl.addEventListener("click", closeTemplatesModal);
+templatesModalEl.addEventListener("click", e => { if (e.target === templatesModalEl) closeTemplatesModal(); });
+templateImportBtnEl.addEventListener("click", () => templateImportInputEl.click());
+
+templateImportInputEl.addEventListener("change", async () => {
+  const file = templateImportInputEl.files && templateImportInputEl.files[0];
+  templateImportInputEl.value = "";
+  if (!file) return;
+  try {
+    const obj = JSON.parse(await file.text());
+    const rec = Templates.addUserTemplate(obj);
+    renderTemplatesList();
+    showToast(`Added template "${rec.name}"`);
+  } catch (e) {
+    showToast("Template import failed: " + e.message);
   }
 });
 

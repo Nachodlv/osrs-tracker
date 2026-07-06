@@ -63,7 +63,7 @@ function makeContext() {
   };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
-  for (const f of ["migration.js", "data.js", "app.js"]) {
+  for (const f of ["migration.js", "data.js", "templates.js", "app.js"]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, f), "utf8"), ctx, { filename: f });
   }
   return ctx;
@@ -213,6 +213,56 @@ test("existing saves keep their goals (don't inherit the new default removed)", 
   `);
   assert.strictEqual(r.ungrouped, true, "stored save keeps its ungrouped goal");
   assert.strictEqual(r.subgoal, true, "stored save keeps its sub-goals");
+});
+
+console.log("Templates");
+
+test("empty template produces a graph with no built-in goals", () => {
+  const r = inCtx(`
+    Templates.applyTemplate("empty");
+    const nodes = getGraph().nodes;
+    const res = { count: Object.keys(nodes).length, ladlor: !!nodes["herb-run"] };
+    Templates.applyTemplate("ladlor"); // restore for later tests
+    return res;
+  `);
+  assert.strictEqual(r.count, 0, "empty template yields an empty graph");
+  assert.strictEqual(r.ladlor, false, "no Ladlor nodes under empty template");
+});
+
+test("ladlor template restores the full built-in tree", () => {
+  const r = inCtx(`
+    Templates.applyTemplate("ladlor");
+    return { ladlor: !!getGraph().nodes["herb-run"] };
+  `);
+  assert.strictEqual(r.ladlor, true, "Ladlor nodes present under ladlor template");
+});
+
+test("createProfile records the chosen template id", () => {
+  const r = inCtx(`
+    createProfile("Blank", "empty");
+    const id = profilesMeta.activeId;
+    const tpl = profilesMeta.profiles[id].templateId;
+    const count = Object.keys(getGraph().nodes).length;
+    Templates.applyTemplate("ladlor");
+    return { tpl: tpl, count: count };
+  `);
+  assert.strictEqual(r.tpl, "empty", "new profile stores its templateId");
+  assert.strictEqual(r.count, 0, "empty-template profile starts with no goals");
+});
+
+test("an imported user template becomes available and applicable", () => {
+  const r = inCtx(`
+    Templates.addUserTemplate({ name: "Mini", goalData: [{ id: "x-goal", title: "X", type: "quest" }], gearGroups: [] });
+    const t = Templates.listTemplates().find(t => t.name === "Mini");
+    Templates.applyTemplate(t.id);
+    const has = !!getGraph().nodes["x-goal"];
+    Templates.removeUserTemplate(t.id);
+    const gone = !Templates.getTemplate(t.id);
+    Templates.applyTemplate("ladlor");
+    return { has: has, gone: gone };
+  `);
+  assert.strictEqual(r.has, true, "custom template's goal renders when applied");
+  assert.strictEqual(r.gone, true, "removed user template is no longer listed");
 });
 
 console.log("\n" + passed + " test(s) passed.");

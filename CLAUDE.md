@@ -9,6 +9,7 @@ Deep architecture and full environment gotchas live in `docs/ARCHITECTURE.md`. R
 - `index.html` , single page; modals for add/edit goal, profiles, reset. Script/CSS tags carry a `?v=N` cache-buster.
 - `app.js` , all app logic: profiles, state, graph build (DAG keyed by `effectiveId`), layered layout, rendering, drag & drop, context menu, add/edit modal, export/import, hiscores sync.
 - `data.js` , static goal tree (`GOAL_DATA`), tier groupings (`GEAR_GROUPS`), skill/quest icon+link resolution helpers. Node ids must stay stable (see Migrations).
+- `templates.js` , new-profile template registry (`Templates.listTemplates/applyTemplate/addUserTemplate/removeUserTemplate`). Built-in templates: "empty" and "ladlor" (Ladlor content captured from data.js). User templates load from localStorage `iron-tracker:templates`. `applyTemplate` reassigns the global `GOAL_DATA`/`GEAR_GROUPS` (hence they are `var`, not `const`) before a profile's state is built. Each profile stores its `templateId`; missing = "ladlor" so old saves are unaffected. `tools/crawl-ladlor.js` regenerates `templates/ladlor.json` from data.js (dev-only).
 - `migration.js` , pure save-data migration (`ID_MIGRATIONS`, `migrateStateData`). No DOM/localStorage; loadable as `<script>` and via `require()`.
 - `test-migration.js` , Node test runner for migration logic.
 - `test-app.js` , Node test runner for app graph/state logic (vm + DOM stub; covers `getGraph`, `computeVisibility`, `addLinkedChild`, `reparentNode`, tier-group visibility).
