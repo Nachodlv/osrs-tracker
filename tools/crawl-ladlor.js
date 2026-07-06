@@ -33,19 +33,29 @@ function loadDataJs() {
   return fn.call(sandbox);
 }
 
+// The ladlorchart.com page is exactly the tier-group gear: keep only top-level
+// goals that belong to a gear group, and drop their sub-goals. (Kept in sync
+// with ladlorPageGoals in templates.js.)
+function ladlorPageGoals(goalData, gearGroups) {
+  const grouped = {};
+  (gearGroups || []).forEach(g => g.forEach(id => { grouped[id] = true; }));
+  return (goalData || [])
+    .filter(n => grouped[n.id])
+    .map(n => Object.assign({}, n, { children: [] }));
+}
+
 function generate() {
   const { GOAL_DATA, GEAR_GROUPS } = loadDataJs();
+  const goalData = ladlorPageGoals(GOAL_DATA, GEAR_GROUPS);
   const template = {
-    id: "ladlor",
     name: "Ironman Ladlord Chart",
     source: "https://ladlorchart.com",
     generatedAt: new Date().toISOString(),
-    goalData: GOAL_DATA,
+    goalData: goalData,
     gearGroups: GEAR_GROUPS
   };
   fs.writeFileSync(OUT, JSON.stringify(template, null, 2) + "\n");
-  const count = countNodes(GOAL_DATA);
-  console.log(`Wrote ${path.relative(ROOT, OUT)} (${GOAL_DATA.length} top-level, ${count} total goals).`);
+  console.log(`Wrote ${path.relative(ROOT, OUT)} (${goalData.length} page goals from ${GOAL_DATA.length} top-level entries in data.js).`);
   return { GOAL_DATA };
 }
 

@@ -4,29 +4,56 @@
 // localStorage, so they can be added or removed without touching source.
 //
 // applyTemplate() reassigns the global GOAL_DATA / GEAR_GROUPS to the selected
-// template's content before a profile's state is built or rendered. Existing
-// profiles have no templateId and default to "ladlor", so they are unaffected.
+// template's content before a profile's state is built or rendered.
 //
-// Template shape (also the JSON import/export format):
-//   { id, name, goalData: [...], gearGroups: [[...]] }
+// The "ladlor" template contains only the goals shown on ladlorchart.com (the
+// tier-group gear), nothing else. data.js still holds the full historical tree
+// (herb runs, quest/diary sub-trees, etc.); that full set is the "__full__"
+// internal template that pre-existing profiles are pinned to (see
+// ensureProfileTemplates in app.js) so their saved progress renders exactly as
+// before. "__full__" is never offered in the picker.
+//
+// Template JSON (import/export) is { name, goalData, gearGroups }. The `id` is
+// internal only and is never exported nor read on import (a fresh id is minted
+// each time), so importing can never silently overwrite an existing template.
 (function (global) {
   var TEMPLATES_KEY = "iron-tracker:templates";
   var DEFAULT_TEMPLATE_ID = "ladlor";
+  var FULL_TEMPLATE_ID = "__full__";
 
   function deepClone(v) { return JSON.parse(JSON.stringify(v || [])); }
 
-  // Built-in templates. Ladlor captures the data.js content as loaded (data.js
-  // runs before this file); Empty starts a blank chart the user builds up.
+  var FULL_GOAL_DATA = global.GOAL_DATA || [];
+  var FULL_GEAR_GROUPS = global.GEAR_GROUPS || [];
+
+  // The ladlorchart.com page is exactly the tier-group gear: keep only top-level
+  // goals that belong to a gear group, dropping every ungrouped goal and every
+  // sub-goal (the page shows these gear items as standalone cards).
+  function ladlorPageGoals(goalData, gearGroups) {
+    var grouped = {};
+    (gearGroups || []).forEach(function (g) { g.forEach(function (id) { grouped[id] = true; }); });
+    return (goalData || [])
+      .filter(function (n) { return grouped[n.id]; })
+      .map(function (n) { return Object.assign({}, n, { children: [] }); });
+  }
+
+  // Built-in templates offered in the New profile picker.
   var BUILTIN_TEMPLATES = [
     { id: "empty", name: "Empty", builtin: true, goalData: [], gearGroups: [] },
     {
       id: DEFAULT_TEMPLATE_ID,
       name: "Ironman Ladlord Chart",
       builtin: true,
-      goalData: global.GOAL_DATA || [],
-      gearGroups: global.GEAR_GROUPS || []
+      goalData: ladlorPageGoals(FULL_GOAL_DATA, FULL_GEAR_GROUPS),
+      gearGroups: FULL_GEAR_GROUPS
     }
   ];
+
+  // The full historical tree, for pre-existing profiles. Not user-facing.
+  var FULL_TEMPLATE = {
+    id: FULL_TEMPLATE_ID, name: "Full (legacy)", builtin: true, internal: true,
+    goalData: FULL_GOAL_DATA, gearGroups: FULL_GEAR_GROUPS
+  };
 
   function loadUserTemplates() {
     try {
@@ -44,11 +71,14 @@
     if (global.localStorage) global.localStorage.setItem(TEMPLATES_KEY, JSON.stringify(list));
   }
 
+  // Templates shown in the New profile picker and Manage templates modal.
   function listTemplates() {
     return BUILTIN_TEMPLATES.concat(loadUserTemplates());
   }
 
+  // Resolve any template id, including the internal "__full__".
   function getTemplate(id) {
+    if (id === FULL_TEMPLATE_ID) return FULL_TEMPLATE;
     var all = listTemplates();
     for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i];
     return null;
@@ -64,28 +94,24 @@
     return api.currentTemplateId;
   }
 
-  // Validate and normalize a parsed JSON template. Returns the stored record or
-  // throws with a user-facing message.
+  // Validate a parsed JSON template. The incoming `id` is ignored on purpose so
+  // an import always creates a new template rather than overwriting one.
   function normalizeImported(obj) {
     if (!obj || typeof obj !== "object") throw new Error("not a template file");
     var name = (obj.name || "").trim();
     if (!name) throw new Error("template is missing a name");
     if (!Array.isArray(obj.goalData)) throw new Error("template is missing goalData");
     if (obj.gearGroups != null && !Array.isArray(obj.gearGroups)) throw new Error("gearGroups must be a list");
-    var id = (obj.id || "").trim();
-    if (!id || /^(empty|ladlor)$/.test(id)) id = "tpl-" + Date.now();
-    return { id: id, name: name, goalData: obj.goalData, gearGroups: obj.gearGroups || [] };
+    return {
+      id: "tpl-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+      name: name, goalData: obj.goalData, gearGroups: obj.gearGroups || []
+    };
   }
 
-  // Add (or replace by id) a user template from a parsed JSON object.
   function addUserTemplate(obj) {
     var rec = normalizeImported(obj);
     var list = loadUserTemplates();
-    var replaced = false;
-    for (var i = 0; i < list.length; i++) {
-      if (list[i].id === rec.id) { list[i] = rec; replaced = true; break; }
-    }
-    if (!replaced) list.push(rec);
+    list.push(rec);
     saveUserTemplates(list);
     return rec;
   }
@@ -97,6 +123,7 @@
 
   var api = {
     DEFAULT_TEMPLATE_ID: DEFAULT_TEMPLATE_ID,
+    FULL_TEMPLATE_ID: FULL_TEMPLATE_ID,
     currentTemplateId: DEFAULT_TEMPLATE_ID,
     listTemplates: listTemplates,
     getTemplate: getTemplate,

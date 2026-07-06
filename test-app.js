@@ -186,33 +186,39 @@ test("addLinkedChild rejects a cycle", () => {
 
 console.log("\nDefault save (new profiles)");
 
-test("new saves show only grouped gear, no ungrouped goals or sub-goals", () => {
+test("a new Ladlor profile shows only the web-page gear, nothing hidden", () => {
   const r = inCtx(`
+    Templates.applyTemplate("ladlor");
     state = defaultState();
     const nodes = getGraph().nodes;
     return {
       grouped: !!nodes["gear.dragon-scimitar"],
       ungrouped: !!nodes["herb-run"],
       subgoal: !!nodes["spirit-tree.75construction"],
-      groupedSub: !!nodes["piety.70def"]
+      groupedSub: !!nodes["piety.70def"],
+      removed: Object.keys(state.removed).length
     };
   `);
-  assert.strictEqual(r.grouped, true, "grouped gear stays visible");
-  assert.strictEqual(r.ungrouped, false, "ungrouped top-level goal is removed");
-  assert.strictEqual(r.subgoal, false, "sub-goal of a grouped goal is removed");
-  assert.strictEqual(r.groupedSub, false, "sub-goal is removed");
+  assert.strictEqual(r.grouped, true, "grouped gear is present");
+  assert.strictEqual(r.ungrouped, false, "ungrouped goal is not in the ladlor template");
+  assert.strictEqual(r.subgoal, false, "sub-goal of a grouped goal is not in the template");
+  assert.strictEqual(r.groupedSub, false, "sub-goal is not in the template");
+  assert.strictEqual(r.removed, 0, "nothing is hidden; extras are simply absent");
 });
 
-test("existing saves keep their goals (don't inherit the new default removed)", () => {
+test("pre-existing profiles keep the full tree (pinned to __full__)", () => {
   const r = inCtx(`
-    // Simulate a pre-existing profile whose stored save removed nothing.
+    // A profile that predates templates renders against the complete tree.
+    Templates.applyTemplate(Templates.FULL_TEMPLATE_ID);
     localStorage.setItem(storageKeyFor(profilesMeta.activeId), JSON.stringify({ done: {}, removed: {} }));
     state = loadState();
     const nodes = getGraph().nodes;
-    return { ungrouped: !!nodes["herb-run"], subgoal: !!nodes["piety.70def"] };
+    const res = { ungrouped: !!nodes["herb-run"], subgoal: !!nodes["piety.70def"] };
+    Templates.applyTemplate("ladlor");
+    return res;
   `);
-  assert.strictEqual(r.ungrouped, true, "stored save keeps its ungrouped goal");
-  assert.strictEqual(r.subgoal, true, "stored save keeps its sub-goals");
+  assert.strictEqual(r.ungrouped, true, "legacy profile still shows its ungrouped goals");
+  assert.strictEqual(r.subgoal, true, "legacy profile still shows its sub-goals");
 });
 
 console.log("Templates");
@@ -229,12 +235,26 @@ test("empty template produces a graph with no built-in goals", () => {
   assert.strictEqual(r.ladlor, false, "no Ladlor nodes under empty template");
 });
 
-test("ladlor template restores the full built-in tree", () => {
+test("ladlor template contains only web-page gear (no herb runs / sub-goals)", () => {
   const r = inCtx(`
     Templates.applyTemplate("ladlor");
-    return { ladlor: !!getGraph().nodes["herb-run"] };
+    const nodes = getGraph().nodes;
+    return { gear: !!nodes["gear.dragon-scimitar"], herb: !!nodes["herb-run"] };
   `);
-  assert.strictEqual(r.ladlor, true, "Ladlor nodes present under ladlor template");
+  assert.strictEqual(r.gear, true, "grouped gear present under ladlor template");
+  assert.strictEqual(r.herb, false, "off-page goals excluded from the ladlor template");
+});
+
+test("importing a template ignores its id and never overwrites a built-in", () => {
+  const r = inCtx(`
+    const rec = Templates.addUserTemplate({ id: "ladlor", name: "Sneaky", goalData: [], gearGroups: [] });
+    const ladlor = Templates.getTemplate("ladlor");
+    const res = { newId: rec.id !== "ladlor", ladlorIntact: !!(ladlor && ladlor.builtin) };
+    Templates.removeUserTemplate(rec.id);
+    return res;
+  `);
+  assert.strictEqual(r.newId, true, "a fresh internal id is minted on import");
+  assert.strictEqual(r.ladlorIntact, true, "the built-in ladlor template is untouched");
 });
 
 test("createProfile records the chosen template id", () => {
@@ -313,14 +333,15 @@ test("a profile made from a user template keeps its ungrouped goals and sub-goal
   assert.strictEqual(r.removedCount, 0, "user templates hide nothing by default");
 });
 
-test("the built-in Ladlor template still hides ungrouped goals and sub-goals by default", () => {
+test("a fresh Ladlor profile excludes off-page goals without hiding anything", () => {
   const r = inCtx(`
     createProfile("L", "ladlor");
     const g = getGraph().nodes;
-    return { herb: !!g["herb-run"], removed: Object.keys(state.removed).length };
+    return { herb: !!g["herb-run"], gear: !!g["gear.dragon-scimitar"], removed: Object.keys(state.removed).length };
   `);
-  assert.strictEqual(r.herb, false, "herb-run stays hidden in a fresh Ladlor profile");
-  assert.ok(r.removed > 0, "Ladlor still applies its default-removed set");
+  assert.strictEqual(r.herb, false, "herb-run is not part of the ladlor template");
+  assert.strictEqual(r.gear, true, "web-page gear is present");
+  assert.strictEqual(r.removed, 0, "nothing is removed; extras are simply absent");
 });
 
 console.log("\n" + passed + " test(s) passed.");

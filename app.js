@@ -31,8 +31,7 @@ function storageKeyFor(profileId) {
 let profilesMeta = loadProfilesMeta();
 
 // Point the global goal data at a profile's chosen template before its state is
-// built or rendered. Profiles saved before templates existed have no templateId
-// and fall back to the default (Ladlor) template, so they are unaffected.
+// built or rendered.
 function templateIdFor(profileId) {
   const p = profilesMeta.profiles[profileId];
   return (p && p.templateId) || Templates.DEFAULT_TEMPLATE_ID;
@@ -42,6 +41,25 @@ function applyProfileTemplate(profileId) {
   Templates.applyTemplate(templateIdFor(profileId));
 }
 
+// Pin every pre-existing (template-less) profile to a concrete template exactly
+// once, so trimming the "ladlor" template to the web-page goals never changes
+// what an old profile renders. A profile that already has a saved state predates
+// templates and is pinned to "__full__" (the complete historical tree, so its
+// progress on herb runs / diaries / quests still shows); a brand-new profile with
+// no saved state yet is pinned to "ladlor" (the clean page-only chart).
+function ensureProfileTemplates() {
+  let changed = false;
+  Object.keys(profilesMeta.profiles).forEach(id => {
+    const p = profilesMeta.profiles[id];
+    if (p.templateId) return;
+    const hasSave = localStorage.getItem(storageKeyFor(id)) != null;
+    p.templateId = hasSave ? Templates.FULL_TEMPLATE_ID : Templates.DEFAULT_TEMPLATE_ID;
+    changed = true;
+  });
+  if (changed) saveProfilesMeta();
+}
+
+ensureProfileTemplates();
 applyProfileTemplate(profilesMeta.activeId);
 
 // Eagerly migrate every profile's saved data (not just the active one) so no
@@ -61,38 +79,13 @@ applyProfileTemplate(profilesMeta.activeId);
   });
 })();
 
-// New saves start showing only the tier-group gear, with no sub-goals: every
-// ungrouped top-level goal and every sub-goal (children of any goal, grouped or
-// not) is removed by default. Existing saves keep their own stored `removed`.
-function defaultRemoved() {
-  if (typeof GOAL_DATA === "undefined") return {};
-  // Only the built-in Ladlor template hides its ungrouped goals and sub-goals by
-  // default (its full tree carries far more than the chart shows). Empty and user
-  // templates start showing exactly the goals they contain, so a template made
-  // from a profile keeps its ungrouped goals and sub-goals when reused.
-  if (typeof Templates !== "undefined" &&
-      Templates.currentTemplateId !== Templates.DEFAULT_TEMPLATE_ID) {
-    return {};
-  }
-  const grouped = {};
-  (typeof GEAR_GROUPS !== "undefined" ? GEAR_GROUPS : []).forEach(function (g) {
-    g.forEach(function (id) { grouped[id] = true; });
-  });
-  const removed = {};
-  (function walk(nodes, isTopLevel) {
-    (nodes || []).forEach(function (n) {
-      // Remove ungrouped top-level goals, and every sub-goal at any depth.
-      if (!isTopLevel || !grouped[n.id]) removed[n.id] = true;
-      walk(n.children, false);
-    });
-  })(GOAL_DATA, true);
-  return removed;
-}
-
+// New saves start showing exactly the goals their template contains, so nothing
+// is removed by default. The "ladlor" template is already trimmed to the
+// web-page goals, and pre-existing profiles load their own stored `removed`.
 function defaultState() {
   return {
     done: {}, order: {}, customNodes: {}, linkedEdges: {}, removedEdges: {},
-    collapsed: {}, overrides: {}, removed: defaultRemoved(), username: "",
+    collapsed: {}, overrides: {}, removed: {}, username: "",
     // Built-in goals detached from every parent, promoted to standalone
     // top-level goals (kept alive past pruneRemoved). Keyed by node id.
     rootGoals: {},
@@ -2970,7 +2963,10 @@ function templateFromCurrentProfile(name) {
 }
 
 function downloadTemplate(t) {
-  const payload = { id: t.id, name: t.name, goalData: t.goalData || [], gearGroups: t.gearGroups || [] };
+  // No id in the exported file: it is an internal handle only, and omitting it
+  // means importing (from a file or the clipboard) always creates a new template
+  // rather than silently overwriting an existing one.
+  const payload = { name: t.name, goalData: t.goalData || [], gearGroups: t.gearGroups || [] };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
