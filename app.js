@@ -28,6 +28,32 @@ function storageKeyFor(profileId) {
   return profileId === DEFAULT_PROFILE_ID ? STORAGE_KEY : STORAGE_KEY + ":" + profileId;
 }
 
+// A profile is pinned to a snapshot of the template content (goalData +
+// gearGroups) it was created from, stored under its own key. Rendering uses this
+// snapshot rather than the live template, so a template update never changes a
+// profile's chart until the user reviews and accepts it. Internal templates
+// (__full__) are not pinned; those profiles render the live tree.
+function baseKeyFor(profileId) {
+  return "iron-tracker:tpl-base:" + profileId;
+}
+
+function loadTemplateBase(profileId) {
+  try {
+    const raw = localStorage.getItem(baseKeyFor(profileId));
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.error("Failed to load template base", profileId, e);
+  }
+  return null;
+}
+
+function saveTemplateBase(profileId, content) {
+  localStorage.setItem(baseKeyFor(profileId), JSON.stringify({
+    goalData: (content && content.goalData) || [],
+    gearGroups: (content && content.gearGroups) || []
+  }));
+}
+
 let profilesMeta = loadProfilesMeta();
 
 // Point the global goal data at a profile's chosen template before its state is
@@ -38,7 +64,9 @@ function templateIdFor(profileId) {
 }
 
 function applyProfileTemplate(profileId) {
-  Templates.applyTemplate(templateIdFor(profileId));
+  const base = loadTemplateBase(profileId);
+  if (base) Templates.applyContent(base.goalData, base.gearGroups, templateIdFor(profileId));
+  else Templates.applyTemplate(templateIdFor(profileId));
 }
 
 // Pin every pre-existing (template-less) profile to a concrete template exactly
@@ -51,10 +79,22 @@ function ensureProfileTemplates() {
   let changed = false;
   Object.keys(profilesMeta.profiles).forEach(id => {
     const p = profilesMeta.profiles[id];
-    if (p.templateId) return;
-    const hasSave = localStorage.getItem(storageKeyFor(id)) != null;
-    p.templateId = hasSave ? Templates.FULL_TEMPLATE_ID : Templates.DEFAULT_TEMPLATE_ID;
-    changed = true;
+    if (!p.templateId) {
+      const hasSave = localStorage.getItem(storageKeyFor(id)) != null;
+      p.templateId = hasSave ? Templates.FULL_TEMPLATE_ID : Templates.DEFAULT_TEMPLATE_ID;
+      changed = true;
+    }
+    // Pin profiles that predate versioning to their template's current content
+    // and version, so they render exactly as before and only warn on a future
+    // bump. Internal templates (__full__) render the live tree, so leave them
+    // unpinned and unversioned.
+    const t = Templates.getTemplate(p.templateId) || Templates.getTemplate(Templates.DEFAULT_TEMPLATE_ID);
+    const internal = t && t.internal;
+    if (!internal && (p.templateVersion == null || localStorage.getItem(baseKeyFor(id)) == null)) {
+      p.templateVersion = t ? (t.version || 1) : 1;
+      saveTemplateBase(id, t);
+      changed = true;
+    }
   });
   if (changed) saveProfilesMeta();
 }
@@ -140,8 +180,10 @@ function createProfile(name, templateId) {
   const trimmed = (name || "").trim();
   if (!trimmed) return;
   const id = "p" + Date.now();
-  const tpl = Templates.getTemplate(templateId) ? templateId : Templates.DEFAULT_TEMPLATE_ID;
-  profilesMeta.profiles[id] = { name: trimmed, templateId: tpl };
+  const t = Templates.getTemplate(templateId) || Templates.getTemplate(Templates.DEFAULT_TEMPLATE_ID);
+  const tpl = t.id;
+  profilesMeta.profiles[id] = { name: trimmed, templateId: tpl, templateVersion: t.version || 1 };
+  if (!t.internal) saveTemplateBase(id, t);
   profilesMeta.activeId = id;
   saveProfilesMeta();
   applyProfileTemplate(id);
@@ -162,6 +204,7 @@ function renameProfile(id, name) {
 function deleteProfile(id) {
   if (Object.keys(profilesMeta.profiles).length <= 1) return;
   localStorage.removeItem(storageKeyFor(id));
+  localStorage.removeItem(baseKeyFor(id));
   delete profilesMeta.profiles[id];
   if (profilesMeta.activeId === id) {
     profilesMeta.activeId = Object.keys(profilesMeta.profiles)[0];
@@ -687,6 +730,7 @@ function getGraph() {
 // wrapper keeps the last good render on screen if anything throws.
 function render() {
   try {
+    renderTemplateBanner();
     renderUnsafe();
   } catch (e) {
     console.error("Render failed — keeping the previous view instead of going blank:", e);
@@ -2852,6 +2896,7 @@ document.addEventListener("keydown", e => {
   if (!profileNameModalEl.hidden) closeProfileNameModal();
   if (!profileDeleteModalEl.hidden) closeProfileDeleteModal();
   if (!templatesModalEl.hidden) closeTemplatesModal();
+  if (templateChangesModalEl && !templateChangesModalEl.hidden) closeTemplateChangesModal();
 });
 
 // --- Profile export / import -----------------------------------------------------
@@ -2895,8 +2940,10 @@ profileImportInputEl.addEventListener("change", async () => {
     let name = baseName, i = 2;
     while (names.has(name)) name = `${baseName} (${i++})`;
     const id = "p" + Date.now();
-    const tpl = Templates.getTemplate(payload.templateId) ? payload.templateId : Templates.DEFAULT_TEMPLATE_ID;
-    profilesMeta.profiles[id] = { name, templateId: tpl };
+    const t = Templates.getTemplate(payload.templateId) || Templates.getTemplate(Templates.DEFAULT_TEMPLATE_ID);
+    const tpl = t.id;
+    profilesMeta.profiles[id] = { name, templateId: tpl, templateVersion: t.version || 1 };
+    if (!t.internal) saveTemplateBase(id, t);
     profilesMeta.activeId = id;
     localStorage.setItem(storageKeyFor(id), JSON.stringify(migrated));
     saveProfilesMeta();
@@ -2910,6 +2957,165 @@ profileImportInputEl.addEventListener("change", async () => {
     showToast("Import failed: " + e.message);
   }
 });
+
+// --- Template updates ------------------------------------------------------------
+// A profile is pinned to a template version (its base snapshot, see baseKeyFor).
+// When the live template's version is higher, a banner offers to review the diff
+// and adopt the new content, or to ignore the update for this version.
+
+// Is there a pending update for this profile? Internal templates never warn.
+function templateUpdateInfo(profileId) {
+  const p = profilesMeta.profiles[profileId];
+  if (!p) return null;
+  const t = Templates.getTemplate(p.templateId);
+  if (!t || t.internal) return null;
+  const cur = t.version || 1;
+  const pinned = p.templateVersion || 1;
+  if (cur <= pinned) return null;
+  if (p.dismissedVersion === cur) return null;
+  return { template: t, from: pinned, to: cur };
+}
+
+// Flatten a template's goalData to id -> { title, parent-id } for diffing.
+function flattenTemplateData(content) {
+  const map = {};
+  (function walk(list, parent) {
+    (list || []).forEach(n => {
+      if (!n || !n.id) return;
+      if (!(n.id in map)) map[n.id] = { title: n.title || n.id, parent: parent };
+      walk(n.children, n.id);
+    });
+  })(content && content.goalData, null);
+  return map;
+}
+
+// Compute the changes applying `newC` over `oldC` would make: added / removed /
+// moved (reparented) goals, and groups new to the template.
+function diffTemplates(oldC, newC) {
+  const oldMap = flattenTemplateData(oldC), newMap = flattenTemplateData(newC);
+  const titleOf = (map, id) => (id == null ? "top level" : (map[id] ? map[id].title : id));
+  const added = [], removed = [], moved = [];
+  Object.keys(newMap).forEach(id => { if (!(id in oldMap)) added.push(newMap[id].title); });
+  Object.keys(oldMap).forEach(id => {
+    if (!(id in newMap)) { removed.push(oldMap[id].title); return; }
+    if (oldMap[id].parent !== newMap[id].parent) {
+      moved.push({ title: newMap[id].title, from: titleOf(oldMap, oldMap[id].parent), to: titleOf(newMap, newMap[id].parent) });
+    }
+  });
+  const sig = g => (g || []).slice().sort().join("|");
+  const oldSigs = new Set(((oldC && oldC.gearGroups) || []).map(sig));
+  const newGroups = [];
+  ((newC && newC.gearGroups) || []).forEach(g => {
+    if (oldSigs.has(sig(g))) return;
+    newGroups.push((g || []).map(mid => (newMap[mid] ? newMap[mid].title : mid)));
+  });
+  return { added, removed, moved, newGroups };
+}
+
+function renderTemplateBanner() {
+  const el = document.getElementById("templateUpdateBanner");
+  if (!el) return;
+  const info = templateUpdateInfo(profilesMeta.activeId);
+  if (!info) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  el.innerHTML = "";
+  const text = document.createElement("span");
+  text.className = "template-banner-text";
+  text.textContent = `The "${info.template.name}" template was updated (v${info.from} → v${info.to}).`;
+  const actions = document.createElement("div");
+  actions.className = "template-banner-actions";
+  const review = document.createElement("button");
+  review.className = "primary";
+  review.textContent = "Review update";
+  review.addEventListener("click", () => openTemplateChangesModal(profilesMeta.activeId));
+  const ignore = document.createElement("button");
+  ignore.textContent = "Ignore";
+  ignore.addEventListener("click", () => ignoreTemplateUpdate(profilesMeta.activeId));
+  actions.appendChild(review);
+  actions.appendChild(ignore);
+  el.appendChild(text);
+  el.appendChild(actions);
+}
+
+function ignoreTemplateUpdate(profileId) {
+  const p = profilesMeta.profiles[profileId];
+  const t = Templates.getTemplate(p && p.templateId);
+  if (!p || !t) return;
+  p.dismissedVersion = t.version || 1;
+  saveProfilesMeta();
+  renderTemplateBanner();
+}
+
+// Adopt the current template content: re-pin the base snapshot and version, then
+// re-render. The profile's own edits (progress, removals, custom nodes) are kept.
+function applyTemplateUpdate(profileId) {
+  const p = profilesMeta.profiles[profileId];
+  const t = Templates.getTemplate(p && p.templateId);
+  if (!p || !t) return;
+  saveTemplateBase(profileId, t);
+  p.templateVersion = t.version || 1;
+  delete p.dismissedVersion;
+  saveProfilesMeta();
+  if (profileId === profilesMeta.activeId) {
+    applyProfileTemplate(profileId);
+    render();
+  } else {
+    renderTemplateBanner();
+  }
+  showToast(`Updated to "${t.name}" v${t.version || 1}`);
+}
+
+const templateChangesModalEl = document.getElementById("templateChangesModal");
+const templateChangesBodyEl = document.getElementById("templateChangesBody");
+const templateChangesTitleEl = document.getElementById("templateChangesTitle");
+const templateChangesConfirmEl = document.getElementById("templateChangesConfirm");
+const templateChangesCancelEl = document.getElementById("templateChangesCancel");
+
+function closeTemplateChangesModal() { if (templateChangesModalEl) templateChangesModalEl.hidden = true; }
+
+function openTemplateChangesModal(profileId) {
+  const p = profilesMeta.profiles[profileId];
+  const t = Templates.getTemplate(p && p.templateId);
+  if (!p || !t || !templateChangesModalEl) return;
+  const base = loadTemplateBase(profileId) || { goalData: [], gearGroups: [] };
+  const diff = diffTemplates(base, { goalData: t.goalData, gearGroups: t.gearGroups });
+  templateChangesTitleEl.textContent = `Update "${t.name}" to v${t.version || 1}`;
+  templateChangesBodyEl.innerHTML = "";
+
+  const section = (title, items, format) => {
+    if (!items.length) return;
+    const h = document.createElement("h3");
+    h.className = "template-changes-heading";
+    h.textContent = `${title} (${items.length})`;
+    const ul = document.createElement("ul");
+    ul.className = "template-changes-list";
+    items.forEach(it => {
+      const li = document.createElement("li");
+      li.textContent = format(it);
+      ul.appendChild(li);
+    });
+    templateChangesBodyEl.appendChild(h);
+    templateChangesBodyEl.appendChild(ul);
+  };
+
+  section("New goals", diff.added, x => x);
+  section("Deleted goals", diff.removed, x => x);
+  section("Moved goals", diff.moved, m => `${m.title}: ${m.from} → ${m.to}`);
+  section("New groups", diff.newGroups, g => g.join(", "));
+
+  if (!diff.added.length && !diff.removed.length && !diff.moved.length && !diff.newGroups.length) {
+    const pnone = document.createElement("p");
+    pnone.className = "modal-body-text";
+    pnone.textContent = "No goal or group changes; only the template version changed.";
+    templateChangesBodyEl.appendChild(pnone);
+  }
+
+  templateChangesConfirmEl.onclick = () => { applyTemplateUpdate(profileId); closeTemplateChangesModal(); };
+  templateChangesModalEl.hidden = false;
+}
+
+if (templateChangesCancelEl) templateChangesCancelEl.addEventListener("click", closeTemplateChangesModal);
+if (templateChangesModalEl) templateChangesModalEl.addEventListener("click", e => { if (e.target === templateChangesModalEl) closeTemplateChangesModal(); });
 
 // --- Template management ---------------------------------------------------------
 // Add or remove new-profile templates. Built-in templates (Empty, Ladlor) are
@@ -2983,7 +3189,8 @@ function renderTemplatesList() {
     const label = document.createElement("span");
     label.className = "templates-list-name";
     const count = (t.goalData || []).length;
-    label.textContent = t.name + (t.builtin ? " (built-in)" : "") + " — " + count + " top-level goals";
+    label.textContent = t.name + (t.builtin ? " (built-in)" : "") + " · v" + (t.version || 1)
+      + " — " + count + " top-level goals";
     li.appendChild(label);
     const actions = document.createElement("div");
     actions.className = "templates-list-actions";
@@ -2991,6 +3198,15 @@ function renderTemplatesList() {
     dl.textContent = "Download";
     dl.addEventListener("click", () => downloadTemplate(t));
     actions.appendChild(dl);
+    if (!t.builtin) {
+      // Re-upload new content to bump this template's version in place, so
+      // profiles created from it can adopt the update via the banner.
+      const upd = document.createElement("button");
+      upd.textContent = "Update from file";
+      upd.title = "Replace this template's content from a JSON file and bump its version";
+      upd.addEventListener("click", () => updateTemplateFromFile(t));
+      actions.appendChild(upd);
+    }
     if (!t.builtin) {
       // Two-step confirm: the first click arms the button, a second click within
       // a few seconds actually removes it (reverts otherwise).
@@ -3037,6 +3253,27 @@ function addTemplateFromObject(obj, sourceLabel) {
   } catch (e) {
     showToast(`Template ${sourceLabel} failed: ` + e.message);
   }
+}
+
+// Replace a user template's content from a JSON file, bumping its version so
+// profiles pinned to it surface the update banner.
+function updateTemplateFromFile(t) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json,application/json";
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    try {
+      const rec = Templates.updateUserTemplate(t.id, JSON.parse(await file.text()));
+      renderTemplatesList();
+      renderTemplateBanner();
+      showToast(`Updated template "${rec.name}" to v${rec.version}`);
+    } catch (e) {
+      showToast("Template update failed: " + e.message);
+    }
+  });
+  input.click();
 }
 
 if (manageTemplatesBtnEl) manageTemplatesBtnEl.addEventListener("click", openTemplatesModal);

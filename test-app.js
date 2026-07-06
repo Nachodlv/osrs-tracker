@@ -419,6 +419,110 @@ test("templateFromCurrentProfile carries the profile's tier groups", () => {
   assert.strictEqual(r.firstGroupHasMembers, true, "captured groups keep their members");
 });
 
+console.log("\nTemplate versioning");
+
+test("diffTemplates reports added, deleted, moved goals and new groups", () => {
+  const r = JSON.parse(vm.runInContext(`JSON.stringify((function(){
+    const oldC = {
+      goalData: [
+        { id: "a", title: "A", children: [ { id: "b", title: "B", children: [] } ] },
+        { id: "c", title: "C", children: [] }
+      ],
+      gearGroups: [ ["a", "c"] ]
+    };
+    const newC = {
+      goalData: [
+        { id: "a", title: "A", children: [] },
+        { id: "b", title: "B", children: [] },
+        { id: "d", title: "D", children: [] }
+      ],
+      gearGroups: [ ["a", "c"], ["b", "d"] ]
+    };
+    return diffTemplates(oldC, newC);
+  })())`, ctx));
+  assert.deepStrictEqual(r.added, ["D"], "d is new");
+  assert.deepStrictEqual(r.removed, ["C"], "c was deleted");
+  assert.strictEqual(r.moved.length, 1, "b moved");
+  assert.strictEqual(r.moved[0].title, "B");
+  assert.strictEqual(r.moved[0].from, "A");
+  assert.strictEqual(r.moved[0].to, "top level");
+  assert.strictEqual(r.newGroups.length, 1, "one new group signature");
+  assert.deepStrictEqual(r.newGroups[0], ["B", "D"], "new group lists member titles");
+});
+
+test("templateUpdateInfo warns only when the live version exceeds the pinned one", () => {
+  const r = inCtx(`
+    const t = Templates.addUserTemplate({ name: "Verd", goalData: [{ id: "x", title: "X", children: [] }] });
+    const id = "p-ver";
+    profilesMeta.profiles[id] = { name: "Ver", templateId: t.id, templateVersion: t.version };
+    const same = templateUpdateInfo(id);
+    Templates.updateUserTemplate(t.id, { name: "Verd", goalData: [{ id: "x", title: "X", children: [] }, { id: "z", title: "Z", children: [] }] });
+    const behind = templateUpdateInfo(id);
+    profilesMeta.profiles[id].dismissedVersion = Templates.getTemplate(t.id).version;
+    const dismissed = templateUpdateInfo(id);
+    delete profilesMeta.profiles[id];
+    Templates.removeUserTemplate(t.id);
+    return { same: !!same, behind: !!behind, dismissed: !!dismissed };
+  `);
+  assert.strictEqual(r.same, false, "no warning when pinned to the current version");
+  assert.strictEqual(r.behind, true, "warns when pinned below the current version");
+  assert.strictEqual(r.dismissed, false, "no warning once this version is dismissed");
+});
+
+test("__full__ profiles never warn (internal template)", () => {
+  const r = inCtx(`
+    const id = "p-full";
+    profilesMeta.profiles[id] = { name: "Full", templateId: "__full__", templateVersion: 0 };
+    const info = templateUpdateInfo(id);
+    delete profilesMeta.profiles[id];
+    return { info: !!info };
+  `);
+  assert.strictEqual(r.info, false, "the internal full template does not raise the banner");
+});
+
+test("applyTemplateUpdate re-pins the base snapshot and version, clearing dismissal", () => {
+  const r = inCtx(`
+    const id = "p-apply";
+    profilesMeta.profiles[id] = { name: "Apply", templateId: "ladlor", templateVersion: 0, dismissedVersion: 0 };
+    applyTemplateUpdate(id);
+    const p = profilesMeta.profiles[id];
+    const base = loadTemplateBase(id);
+    const cur = Templates.getTemplate("ladlor").version || 1;
+    const res = { version: p.templateVersion, dismissed: p.dismissedVersion, hasBase: !!(base && base.goalData.length), cur };
+    delete profilesMeta.profiles[id];
+    localStorage.removeItem(baseKeyFor(id));
+    return res;
+  `);
+  assert.strictEqual(r.version, r.cur, "pins to the current template version");
+  assert.strictEqual(r.dismissed, undefined, "clears any prior dismissal");
+  assert.strictEqual(r.hasBase, true, "writes the new base snapshot");
+});
+
+test("createProfile pins a base snapshot and version", () => {
+  const r = inCtx(`
+    createProfile("Pinned", "ladlor");
+    const id = profilesMeta.activeId;
+    const p = profilesMeta.profiles[id];
+    const base = loadTemplateBase(id);
+    return { version: p.templateVersion, hasBase: !!(base && base.goalData.length) };
+  `);
+  assert.ok(r.version >= 1, "records the template version");
+  assert.strictEqual(r.hasBase, true, "stores the starting content snapshot");
+});
+
+test("updateUserTemplate bumps the version in place, keeping the id", () => {
+  const r = inCtx(`
+    const a = Templates.addUserTemplate({ name: "Editable", goalData: [{ id: "x", title: "X", children: [] }] });
+    const v1 = a.version;
+    const b = Templates.updateUserTemplate(a.id, { name: "Editable", goalData: [{ id: "x", title: "X", children: [] }, { id: "y", title: "Y", children: [] }] });
+    Templates.removeUserTemplate(a.id);
+    return { sameId: a.id === b.id, v1, v2: b.version, goals: (b.goalData || []).length };
+  `);
+  assert.strictEqual(r.sameId, true, "keeps the same template id");
+  assert.strictEqual(r.v2, r.v1 + 1, "bumps the version by one");
+  assert.strictEqual(r.goals, 2, "adopts the new content");
+});
+
 console.log("\n" + passed + " test(s) passed.");
 if (process.exitCode) console.error("Some app tests failed.");
 else console.log("All app tests passed.");

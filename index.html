@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Iron Tracker</title>
-<link rel="stylesheet" href="style.css?v=45" />
+<link rel="stylesheet" href="style.css?v=46" />
 </head>
 <body>
   <header class="topbar">
@@ -64,6 +64,8 @@
       <span>📊 Skill goal tracked automatically from your hiscores</span>
     </div>
   </header>
+
+  <div id="templateUpdateBanner" class="template-banner" hidden></div>
 
   <main id="chart"></main>
 
@@ -185,7 +187,7 @@
   <div id="templatesModal" class="modal-overlay" hidden>
     <div class="modal-card">
       <h2>Manage templates</h2>
-      <p class="modal-body-text">Templates are the starting chart a new profile is created from. Import a template JSON file to add one, or remove your own. Existing profiles are not affected.</p>
+      <p class="modal-body-text">Templates are the starting chart a new profile is created from. Import a template JSON file to add one, or remove your own. Updating a template from a file bumps its version, prompting profiles created from it to adopt the changes.</p>
       <ul id="templatesList" class="templates-list"></ul>
       <div class="templates-new-row">
         <input id="templateNewName" type="text" autocomplete="off" placeholder="Name a template from the current profile…" />
@@ -200,9 +202,21 @@
     </div>
   </div>
 
-  <script src="migration.js?v=45"></script>
-  <script src="data.js?v=45"></script>
-  <script src="templates.js?v=45"></script>
-  <script src="app.js?v=45"></script>
+  <div id="templateChangesModal" class="modal-overlay" hidden>
+    <div class="modal-card">
+      <h2 id="templateChangesTitle">Template update</h2>
+      <p class="modal-body-text">These changes will be applied to your save. Your progress, hidden goals, and custom goals are kept.</p>
+      <div id="templateChangesBody" class="template-changes-body"></div>
+      <div class="modal-actions">
+        <button type="button" id="templateChangesCancel">Cancel</button>
+        <button type="button" id="templateChangesConfirm" class="primary">Update my save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="migration.js?v=46"></script>
+  <script src="data.js?v=46"></script>
+  <script src="templates.js?v=46"></script>
+  <script src="app.js?v=46"></script>
 </body>
 </html>
