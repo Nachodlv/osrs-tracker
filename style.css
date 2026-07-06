@@ -1314,13 +1314,18 @@ button.add-link:hover {
   gap: 12px;
   flex-wrap: wrap;
   margin: 12px auto 0;
-  max-width: 1400px;
-  padding: 10px 16px;
-  background: rgba(212, 175, 55, 0.12);
-  border: 1px solid var(--gold);
+  max-width: 1200px;
+  padding: 10px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--gold);
   border-radius: 6px;
   font-size: 0.85rem;
 }
+
+/* A CSS display rule overrides the [hidden] attribute, so restore it here or the
+   emptied banner would linger as a blank bar after an update is applied. */
+.template-banner[hidden] { display: none; }
 
 .template-banner-text { color: var(--text); }
 
@@ -1332,20 +1337,22 @@ button.add-link:hover {
 
 .template-banner-actions button {
   background: var(--bg-card);
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border);
   color: var(--text);
   border-radius: 5px;
   padding: 6px 12px;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   cursor: pointer;
 }
 
-.template-banner-actions button:hover { border-color: var(--gold); }
+.template-banner-actions button:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
 
 .template-banner-actions button.primary {
-  background: var(--green);
-  border-color: var(--green);
-  color: #0c1407;
+  border-color: var(--gold);
+  color: var(--gold-bright);
   font-weight: bold;
 }
 

@@ -3048,6 +3048,32 @@ function ignoreTemplateUpdate(profileId) {
 
 // Adopt the current template content: re-pin the base snapshot and version, then
 // re-render. The profile's own edits (progress, removals, custom nodes) are kept.
+// Fold the (now-current) template's GEAR_GROUPS into the profile's groupsState.
+// ensureGroupsState only seeds once, so without this a template's new groups
+// would never appear after an update. Existing groups and the user's own group
+// edits are left untouched; a template group is added only when it is genuinely
+// new (its member set is not already a group, and none of its members are
+// already placed in another group).
+function mergeTemplateGroups() {
+  ensureGroupsState();
+  const gs = state.groupsState;
+  const existingSigs = new Set(gs.groupOrder.map(gid => (gs.groups[gid] || []).slice().sort().join("|")));
+  const placed = new Set();
+  gs.groupOrder.forEach(gid => (gs.groups[gid] || []).forEach(m => placed.add(m)));
+  let next = gs.groupOrder.length;
+  (typeof GEAR_GROUPS !== "undefined" ? GEAR_GROUPS : []).forEach(g => {
+    const members = g.filter(id => currentNodes[id]);
+    if (members.length < 2) return;
+    if (existingSigs.has(members.slice().sort().join("|"))) return;
+    if (members.some(m => placed.has(m))) return;
+    let gid;
+    do { gid = "g" + next++; } while (gs.groups[gid]);
+    gs.groups[gid] = members;
+    gs.groupOrder.push(gid);
+    members.forEach(m => placed.add(m));
+  });
+}
+
 function applyTemplateUpdate(profileId) {
   const p = profilesMeta.profiles[profileId];
   const t = Templates.getTemplate(p && p.templateId);
@@ -3058,6 +3084,9 @@ function applyTemplateUpdate(profileId) {
   saveProfilesMeta();
   if (profileId === profilesMeta.activeId) {
     applyProfileTemplate(profileId);
+    render();             // rebuild currentNodes from the new template content
+    mergeTemplateGroups(); // then adopt any groups the template added
+    saveState();
     render();
   } else {
     renderTemplateBanner();
