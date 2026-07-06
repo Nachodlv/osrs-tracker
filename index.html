@@ -4,40 +4,60 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Iron Tracker</title>
-<link rel="stylesheet" href="style.css?v=38" />
+<link rel="stylesheet" href="style.css?v=39" />
 </head>
 <body>
   <header class="topbar">
     <div class="topbar-inner">
-      <h1>Iron Tracker <span class="subtitle">— based on <a href="https://ladlorchart.com/" target="_blank" rel="noopener">Ladlor's Chart</a></span></h1>
-      <div class="overall-progress">
-        <div class="overall-progress-bar"><div id="overallFill" class="overall-progress-fill"></div></div>
-        <span id="overallLabel">0 / 0 (0%)</span>
+      <div class="topbar-heading">
+        <h1>Iron Tracker <span class="subtitle">— based on <a href="https://ladlorchart.com/" target="_blank" rel="noopener">Ladlor's Chart</a></span></h1>
+        <div class="overall-progress">
+          <div class="overall-progress-bar"><div id="overallFill" class="overall-progress-fill"></div></div>
+          <span id="overallLabel">0 / 0 (0%)</span>
+        </div>
       </div>
-    </div>
-    <div class="toolbar">
       <div class="profile-bar">
         <label for="profileSelect" class="profile-label">Profile</label>
         <select id="profileSelect"></select>
-        <button id="profileNewBtn" title="Create a new profile">+ New</button>
-        <button id="profileRenameBtn" title="Rename current profile">Rename</button>
-        <button id="profileExportBtn" title="Download this profile as a file (import it in any other browser)">Export</button>
-        <button id="profileImportBtn" title="Import a profile from an exported file">Import</button>
+        <div class="popover-wrap">
+          <button id="profileMenuBtn" class="icon-btn" title="Profile actions" aria-haspopup="true" aria-expanded="false">⚙</button>
+          <div id="profileMenu" class="popover" hidden>
+            <button id="profileNewBtn" title="Create a new profile">+ New profile</button>
+            <button id="profileRenameBtn" title="Rename current profile">Rename</button>
+            <button id="profileExportBtn" title="Download this profile as a file (import it in any other browser)">Export</button>
+            <button id="profileImportBtn" title="Import a profile from an exported file">Import</button>
+            <div class="popover-sep"></div>
+            <button id="profileDeleteBtn" class="danger" title="Delete current profile">Delete profile</button>
+            <button id="resetAll" class="danger">Reset progress</button>
+          </div>
+        </div>
         <input id="profileImportInput" type="file" accept=".json,application/json" hidden />
-        <button id="profileDeleteBtn" class="danger" title="Delete current profile">Delete</button>
       </div>
-      <div class="hiscores-bar">
-        <input id="rsnInput" type="text" placeholder="OSRS username" title="Saved per-profile; used to auto-track skill goals" />
-        <button id="syncStatsBtn">Sync stats</button>
-        <span id="syncStatusText" class="sync-status"></span>
-      </div>
-      <input id="search" type="text" placeholder="Filter goals..." />
-      <button id="expandAll">Expand all</button>
-      <button id="collapseAll">Collapse all</button>
-      <button id="hideCompletedBtn">Hide completed</button>
-      <button id="hideIncompleteBtn">Hide incomplete</button>
-      <button id="resetAll" class="danger">Reset progress</button>
     </div>
+
+    <div class="search-bar">
+      <img class="search-icon" src="https://oldschool.runescape.wiki/images/Search.png" alt="" aria-hidden="true" />
+      <input id="search" type="text" placeholder="Filter goals..." />
+    </div>
+
+    <div class="toolbar">
+      <div class="view-controls">
+        <button id="expandAll">Expand all</button>
+        <button id="collapseAll">Collapse all</button>
+        <button id="hideCompletedBtn">Hide completed</button>
+        <button id="hideIncompleteBtn">Hide incomplete</button>
+      </div>
+      <div class="popover-wrap sync-wrap">
+        <button id="syncMenuBtn" title="Track skill goals from your OSRS hiscores" aria-haspopup="true" aria-expanded="false"><img class="btn-icon" src="https://oldschool.runescape.wiki/images/Skills_icon.png" alt="" aria-hidden="true" />Sync stats</button>
+        <div id="syncMenu" class="popover popover-right" hidden>
+          <label class="popover-label" for="rsnInput">OSRS username</label>
+          <input id="rsnInput" type="text" placeholder="OSRS username" title="Saved per-profile; used to auto-track skill goals" />
+          <button id="syncStatsBtn">Sync stats</button>
+          <span id="syncStatusText" class="sync-status"></span>
+        </div>
+      </div>
+    </div>
+
     <div class="legend">
       <span>🔗 Shared requirement (unlocks multiple goals)</span>
       <span>📊 Skill goal tracked automatically from your hiscores</span>
@@ -157,8 +177,8 @@
     </div>
   </div>
 
-  <script src="migration.js?v=38"></script>
-  <script src="data.js?v=38"></script>
-  <script src="app.js?v=38"></script>
+  <script src="migration.js?v=39"></script>
+  <script src="data.js?v=39"></script>
+  <script src="app.js?v=39"></script>
 </body>
 </html>

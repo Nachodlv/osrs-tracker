@@ -2707,6 +2707,47 @@ const profileDeleteCancelEl = document.getElementById("profileDeleteCancel");
 
 let profileNameMode = "new"; // "new" | "rename"
 
+// Toolbar popovers (profile actions, sync). Trigger button toggles its menu;
+// outside click, Escape, or clicking a button inside closes it.
+const POPOVERS = [
+  ["profileMenuBtn", "profileMenu"],
+  ["syncMenuBtn", "syncMenu"],
+];
+function closeAllPopovers(exceptMenu) {
+  for (const [btnId, menuId] of POPOVERS) {
+    const menu = document.getElementById(menuId);
+    if (!menu || menu === exceptMenu) continue;
+    menu.hidden = true;
+    const btn = document.getElementById(btnId);
+    if (btn) btn.setAttribute("aria-expanded", "false");
+  }
+}
+for (const [btnId, menuId] of POPOVERS) {
+  const btn = document.getElementById(btnId);
+  const menu = document.getElementById(menuId);
+  if (!btn || !menu) continue;
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const willOpen = menu.hidden;
+    closeAllPopovers(willOpen ? menu : null);
+    menu.hidden = !willOpen;
+    btn.setAttribute("aria-expanded", String(willOpen));
+  });
+  // Profile actions open modals, so close the menu on click. The sync menu
+  // stays open so its async status text remains visible after "Sync stats".
+  if (menuId === "profileMenu") {
+    menu.addEventListener("click", (e) => {
+      if (e.target.closest("button")) closeAllPopovers();
+    });
+  }
+}
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".popover-wrap")) closeAllPopovers();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeAllPopovers();
+});
+
 profileSelectEl.addEventListener("change", () => switchProfile(profileSelectEl.value));
 
 profileNewBtnEl.addEventListener("click", () => {
