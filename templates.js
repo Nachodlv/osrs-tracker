@@ -60,7 +60,8 @@
     var t = getTemplate(id) || getTemplate(DEFAULT_TEMPLATE_ID);
     global.GOAL_DATA = deepClone(t ? t.goalData : []);
     global.GEAR_GROUPS = deepClone(t ? t.gearGroups : []);
-    return t ? t.id : DEFAULT_TEMPLATE_ID;
+    api.currentTemplateId = t ? t.id : DEFAULT_TEMPLATE_ID;
+    return api.currentTemplateId;
   }
 
   // Validate and normalize a parsed JSON template. Returns the stored record or
@@ -96,6 +97,7 @@
 
   var api = {
     DEFAULT_TEMPLATE_ID: DEFAULT_TEMPLATE_ID,
+    currentTemplateId: DEFAULT_TEMPLATE_ID,
     listTemplates: listTemplates,
     getTemplate: getTemplate,
     applyTemplate: applyTemplate,

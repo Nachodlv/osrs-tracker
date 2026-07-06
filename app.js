@@ -66,6 +66,14 @@ applyProfileTemplate(profilesMeta.activeId);
 // not) is removed by default. Existing saves keep their own stored `removed`.
 function defaultRemoved() {
   if (typeof GOAL_DATA === "undefined") return {};
+  // Only the built-in Ladlor template hides its ungrouped goals and sub-goals by
+  // default (its full tree carries far more than the chart shows). Empty and user
+  // templates start showing exactly the goals they contain, so a template made
+  // from a profile keeps its ungrouped goals and sub-goals when reused.
+  if (typeof Templates !== "undefined" &&
+      Templates.currentTemplateId !== Templates.DEFAULT_TEMPLATE_ID) {
+    return {};
+  }
   const grouped = {};
   (typeof GEAR_GROUPS !== "undefined" ? GEAR_GROUPS : []).forEach(function (g) {
     g.forEach(function (id) { grouped[id] = true; });
@@ -2988,10 +2996,25 @@ function renderTemplatesList() {
     dl.addEventListener("click", () => downloadTemplate(t));
     actions.appendChild(dl);
     if (!t.builtin) {
+      // Two-step confirm: the first click arms the button, a second click within
+      // a few seconds actually removes it (reverts otherwise).
       const rm = document.createElement("button");
       rm.className = "danger";
       rm.textContent = "Remove";
+      let armed = false, armTimer = null;
       rm.addEventListener("click", () => {
+        if (!armed) {
+          armed = true;
+          rm.textContent = "Confirm remove";
+          rm.classList.add("confirming");
+          armTimer = setTimeout(() => {
+            armed = false;
+            rm.textContent = "Remove";
+            rm.classList.remove("confirming");
+          }, 4000);
+          return;
+        }
+        clearTimeout(armTimer);
         Templates.removeUserTemplate(t.id);
         renderTemplatesList();
         showToast(`Removed template "${t.name}"`);

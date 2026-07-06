@@ -288,6 +288,41 @@ test("templateFromCurrentProfile captures the current chart (custom goal include
   assert.strictEqual(r.childTitle, "Child goal", "nested child captured");
 });
 
+test("a profile made from a user template keeps its ungrouped goals and sub-goals", () => {
+  const r = inCtx(`
+    createProfile("Builder", "empty");
+    addCustomChild(null, "My Root", { type: "quest" });
+    const rid = Object.keys(state.customNodes)[0];
+    addCustomChild(rid, "My Sub", { type: "quest" });
+    render();
+    const rec = Templates.addUserTemplate(templateFromCurrentProfile("MyTpl"));
+    createProfile("User", rec.id);
+    const g = getGraph().nodes;
+    const rootId = Object.keys(g).find(id => g[id].title === "My Root");
+    const res = {
+      rootShown: !!rootId,
+      childShown: rootId ? g[g[rootId].childIds[0]].title : null,
+      removedCount: Object.keys(state.removed).length
+    };
+    Templates.removeUserTemplate(rec.id);
+    Templates.applyTemplate("ladlor");
+    return res;
+  `);
+  assert.strictEqual(r.rootShown, true, "ungrouped goal shows under a user template");
+  assert.strictEqual(r.childShown, "My Sub", "sub-goal shows under a user template");
+  assert.strictEqual(r.removedCount, 0, "user templates hide nothing by default");
+});
+
+test("the built-in Ladlor template still hides ungrouped goals and sub-goals by default", () => {
+  const r = inCtx(`
+    createProfile("L", "ladlor");
+    const g = getGraph().nodes;
+    return { herb: !!g["herb-run"], removed: Object.keys(state.removed).length };
+  `);
+  assert.strictEqual(r.herb, false, "herb-run stays hidden in a fresh Ladlor profile");
+  assert.ok(r.removed > 0, "Ladlor still applies its default-removed set");
+});
+
 console.log("\n" + passed + " test(s) passed.");
 if (process.exitCode) console.error("Some app tests failed.");
 else console.log("All app tests passed.");

@@ -1205,6 +1205,54 @@ button.add-link:hover {
   min-width: 0;
 }
 
+/* Buttons and inputs inside the manage-templates modal (download/remove per
+   row, the save-from-profile row, and the footer) share the app's card look. */
+#templatesModal button {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 7px 12px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+#templatesModal button:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+#templatesModal button.danger {
+  border-color: var(--border-light);
+  color: var(--text);
+}
+
+#templatesModal button.danger:hover {
+  border-color: var(--red);
+  color: #ff8a7a;
+}
+
+#templatesModal button.confirming {
+  border-color: var(--red);
+  color: #ff8a7a;
+  font-weight: bold;
+}
+
+.templates-list-actions button {
+  padding: 5px 10px;
+  font-size: 0.8rem;
+}
+
+#templatesModal .templates-new-row input,
+#templatesModal input#templateNewName {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 7px 10px;
+  font-size: 0.85rem;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;
