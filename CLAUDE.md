@@ -40,18 +40,19 @@ Most graph/data questions can be answered from here without reading `data.js` (i
 - Run `node test-migration.js` after ANY change to data ids, state shape, or migration logic, and `node test-app.js` after changes to graph/state/render logic. All tests must pass before finishing.
 - Prefer adding a case to `test-app.js` over `preview_eval` for graph/state/layout bugs. Its harness runs assertions inside the vm context via `vm.runInContext` (top-level `let`/`const` like `state` are not reachable as context props, but `function` declarations like `getGraph`, `reparentNode`, `computeVisibility` are). Test custom goals use type `"quest"` to stay deterministic (no network fetch). CSS and real pixel rendering still need the preview tools.
 - When testing in the browser: create a NEW profile. Never test against the TuuxSolo profile, it holds real progress.
+- For ad-hoc state/graph probes, add a temporary case to `test-app.js` (reuse its `makeContext`/`inCtx`) and delete it after; do NOT paste a fresh vm + DOM-stub harness inline (that duplicates ~60 lines of boilerplate per probe).
+- `templates/ladlor.json` is generated (~1900 lines): never Read it. Regenerate with `node tools/crawl-ladlor.js` and diff if needed.
 
 ### Conventions
-- Bump the `?v=N` cache-buster in index.html on every change to js/css files (bump all four references together; grep `?v=` to find the current value).
+- Bump the `?v=N` cache-buster in index.html on every change to js/css files (bump all references together; grep `?v=` for the current value). Do the bump IN THE SAME Edit batch as the change that needs it, never as a separate step: any touch of index.html re-injects the whole ~200-line file into context, so a second touch wastes thousands of tokens.
 - Keep it dependency-free vanilla JS; single files, no modules/bundler.
-- Comments: brief and functional only. No history/changelog-style comments. No em dashes in comments/commit messages/markdown; use commas/periods.
+- Comments: brief and functional only. No history/changelog-style comments.
 - New user-facing state edits go through `saveState()` + `render()`; `render()` must never leave the page blank (renderUnsafe builds off-screen; the wrapper keeps the last good render on error).
 - Every mutating user action is wrapped in `withUndo(label, fn)` (snapshots serialized state, shows a bottom undo toast). New state-changing actions should be wrapped too; nested calls collapse via a re-entrancy guard.
 - Output only the modified or requested code block.
 
 ### Working style (user preferences)
-- Do git, tests, and browser preview INLINE by default; do NOT spawn subagents for them (a subagent cold-start costs ~30k tokens, ~10x inline). Delegate to a Sonnet 5 low-effort subagent only when context is heavy or the task is long/noisy; if you do, tell it to run the work itself and NEVER re-delegate (recursion on the "delegate git" habit caused an infinite loop once).
-- Commit/push only when asked. User works directly on `master` (repo: github.com/Nachodlv/osrs-tracker). Commit trailer: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`. Keep commit bodies to one short paragraph.
+- User works directly on `master` (repo: github.com/Nachodlv/osrs-tracker). Commit trailer: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`. Keep commit bodies to one short paragraph.
 - Node is not on the shell PATH; in PowerShell prepend it: `$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")`.
 - Local dev server: `.claude/launch.json` config `iron-tracker-server` (python server.py). `state` and other top-level `let`/`const` are NOT on `window`; `function` declarations (`getGraph`, `reparentNode`, `render`) ARE, so use those from `preview_eval`.
 - When probing state via `preview_eval` or the harness, return only the booleans/counts/ids you need, never a full node list or all titles (~200 goals; one dump is thousands of tokens). Prefer `.length`, `!!nodes[id]`, `n.parentIds`. Better still, reproduce graph/state bugs in `test-app.js`.
