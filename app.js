@@ -2922,6 +2922,54 @@ const templatesListEl = document.getElementById("templatesList");
 const templatesCloseBtnEl = document.getElementById("templatesCloseBtn");
 const templateImportBtnEl = document.getElementById("templateImportBtn");
 const templateImportInputEl = document.getElementById("templateImportInput");
+const templatePasteBtnEl = document.getElementById("templatePasteBtn");
+const templateNewNameEl = document.getElementById("templateNewName");
+const templateFromProfileBtnEl = document.getElementById("templateFromProfileBtn");
+
+// Serialize the active profile's current chart into a template (goalData +
+// gearGroups). Reads the final graph (removals, edge edits and custom nodes all
+// applied), so the template starts a new profile from exactly what's on screen.
+function templateFromCurrentProfile(name) {
+  const { nodes } = getGraph();
+  ensureGroupsState();
+  const emitted = {};
+  function serialize(id) {
+    const n = nodes[id];
+    if (!n) return null;
+    const node = { id: n.id, title: n.title, type: n.type || "other" };
+    if (n.shared) node.shared = n.shared;
+    if (n.icon) node.icon = n.icon;
+    if (n.iconUrl) node.iconUrl = n.iconUrl;
+    if (n.link) node.link = n.link;
+    if (n.note) node.note = n.note;
+    if (n.description) node.description = n.description;
+    node.children = [];
+    (n.childIds || []).forEach(cid => {
+      if (emitted[cid]) return; // a shared/multi-parent node is emitted once
+      emitted[cid] = true;
+      const child = serialize(cid);
+      if (child) node.children.push(child);
+    });
+    return node;
+  }
+  const roots = Object.keys(nodes).filter(id => nodes[id].parentIds.length === 0);
+  roots.forEach(id => { emitted[id] = true; });
+  const goalData = roots.map(serialize).filter(Boolean);
+  const gearGroups = (state.groupsState.groupOrder || [])
+    .map(gid => (state.groupsState.groups[gid] || []).filter(mid => nodes[mid]))
+    .filter(g => g.length);
+  return { name: name, goalData: goalData, gearGroups: gearGroups };
+}
+
+function downloadTemplate(t) {
+  const payload = { id: t.id, name: t.name, goalData: t.goalData || [], gearGroups: t.gearGroups || [] };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "iron-tracker-template-" + (t.name.replace(/[^\w-]+/g, "_") || "template") + ".json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
 function renderTemplatesList() {
   templatesListEl.innerHTML = "";
@@ -2933,6 +2981,12 @@ function renderTemplatesList() {
     const count = (t.goalData || []).length;
     label.textContent = t.name + (t.builtin ? " (built-in)" : "") + " — " + count + " top-level goals";
     li.appendChild(label);
+    const actions = document.createElement("div");
+    actions.className = "templates-list-actions";
+    const dl = document.createElement("button");
+    dl.textContent = "Download";
+    dl.addEventListener("click", () => downloadTemplate(t));
+    actions.appendChild(dl);
     if (!t.builtin) {
       const rm = document.createElement("button");
       rm.className = "danger";
@@ -2942,14 +2996,29 @@ function renderTemplatesList() {
         renderTemplatesList();
         showToast(`Removed template "${t.name}"`);
       });
-      li.appendChild(rm);
+      actions.appendChild(rm);
     }
+    li.appendChild(actions);
     templatesListEl.appendChild(li);
   });
 }
 
-function openTemplatesModal() { renderTemplatesList(); templatesModalEl.hidden = false; }
+function openTemplatesModal() {
+  if (templateNewNameEl) templateNewNameEl.value = "";
+  renderTemplatesList();
+  templatesModalEl.hidden = false;
+}
 function closeTemplatesModal() { templatesModalEl.hidden = true; }
+
+function addTemplateFromObject(obj, sourceLabel) {
+  try {
+    const rec = Templates.addUserTemplate(obj);
+    renderTemplatesList();
+    showToast(`Added template "${rec.name}"`);
+  } catch (e) {
+    showToast(`Template ${sourceLabel} failed: ` + e.message);
+  }
+}
 
 if (manageTemplatesBtnEl) manageTemplatesBtnEl.addEventListener("click", openTemplatesModal);
 templatesCloseBtnEl.addEventListener("click", closeTemplatesModal);
@@ -2961,13 +3030,30 @@ templateImportInputEl.addEventListener("change", async () => {
   templateImportInputEl.value = "";
   if (!file) return;
   try {
-    const obj = JSON.parse(await file.text());
-    const rec = Templates.addUserTemplate(obj);
-    renderTemplatesList();
-    showToast(`Added template "${rec.name}"`);
+    addTemplateFromObject(JSON.parse(await file.text()), "import");
   } catch (e) {
     showToast("Template import failed: " + e.message);
   }
+});
+
+templatePasteBtnEl.addEventListener("click", async () => {
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      throw new Error("clipboard not available in this browser");
+    }
+    const text = await navigator.clipboard.readText();
+    if (!text || !text.trim()) throw new Error("clipboard is empty");
+    addTemplateFromObject(JSON.parse(text), "paste");
+  } catch (e) {
+    showToast("Template paste failed: " + e.message);
+  }
+});
+
+templateFromProfileBtnEl.addEventListener("click", () => {
+  const name = (templateNewNameEl.value || "").trim()
+    || profilesMeta.profiles[profilesMeta.activeId].name + " template";
+  addTemplateFromObject(templateFromCurrentProfile(name), "save");
+  templateNewNameEl.value = "";
 });
 
 // --- Hiscores sync --------------------------------------------------------------

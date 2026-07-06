@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Iron Tracker</title>
-<link rel="stylesheet" href="style.css?v=41" />
+<link rel="stylesheet" href="style.css?v=42" />
 </head>
 <body>
   <header class="topbar">
@@ -187,17 +187,22 @@
       <h2>Manage templates</h2>
       <p class="modal-body-text">Templates are the starting chart a new profile is created from. Import a template JSON file to add one, or remove your own. Existing profiles are not affected.</p>
       <ul id="templatesList" class="templates-list"></ul>
+      <div class="templates-new-row">
+        <input id="templateNewName" type="text" autocomplete="off" placeholder="Name a template from the current profile…" />
+        <button type="button" id="templateFromProfileBtn">Save current profile</button>
+      </div>
       <div class="modal-actions">
-        <button type="button" id="templateImportBtn" class="primary">Import template</button>
-        <button type="button" id="templatesCloseBtn">Close</button>
+        <button type="button" id="templateImportBtn">Import file</button>
+        <button type="button" id="templatePasteBtn">Paste from clipboard</button>
+        <button type="button" id="templatesCloseBtn" class="primary">Close</button>
       </div>
       <input id="templateImportInput" type="file" accept=".json,application/json" hidden />
     </div>
   </div>
 
-  <script src="migration.js?v=41"></script>
-  <script src="data.js?v=41"></script>
-  <script src="templates.js?v=41"></script>
-  <script src="app.js?v=41"></script>
+  <script src="migration.js?v=42"></script>
+  <script src="data.js?v=42"></script>
+  <script src="templates.js?v=42"></script>
+  <script src="app.js?v=42"></script>
 </body>
 </html>

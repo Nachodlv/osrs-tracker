@@ -265,6 +265,29 @@ test("an imported user template becomes available and applicable", () => {
   assert.strictEqual(r.gone, true, "removed user template is no longer listed");
 });
 
+test("templateFromCurrentProfile captures the current chart (custom goal included)", () => {
+  const r = inCtx(`
+    Templates.applyTemplate("empty");
+    state.removed = {}; state.customNodes = {};
+    addCustomChild(null, "Root goal", { type: "quest" });
+    const rootId = Object.keys(state.customNodes)[0];
+    addCustomChild(rootId, "Child goal", { type: "quest" });
+    render();
+    const tpl = templateFromCurrentProfile("Snapshot");
+    Templates.applyTemplate("ladlor");
+    return {
+      name: tpl.name,
+      roots: tpl.goalData.length,
+      rootTitle: tpl.goalData[0] && tpl.goalData[0].title,
+      childTitle: tpl.goalData[0] && tpl.goalData[0].children[0] && tpl.goalData[0].children[0].title
+    };
+  `);
+  assert.strictEqual(r.name, "Snapshot");
+  assert.strictEqual(r.roots, 1, "one top-level goal captured");
+  assert.strictEqual(r.rootTitle, "Root goal");
+  assert.strictEqual(r.childTitle, "Child goal", "nested child captured");
+});
+
 console.log("\n" + passed + " test(s) passed.");
 if (process.exitCode) console.error("Some app tests failed.");
 else console.log("All app tests passed.");
