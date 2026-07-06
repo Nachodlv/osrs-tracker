@@ -386,6 +386,26 @@ main#chart {
   gap: 14px;
 }
 
+.chart-empty {
+  flex: 1 0 100%;
+  display: flex;
+  justify-content: center;
+  padding: 64px 16px;
+}
+
+.chart-empty-add {
+  font-size: 1rem;
+  padding: 12px 22px;
+  cursor: pointer;
+  background: var(--green);
+  border: 1px solid var(--green);
+  border-radius: 6px;
+  color: #0c1407;
+  font-weight: bold;
+}
+
+.chart-empty-add:hover { filter: brightness(1.08); }
+
 .gear-group {
   position: relative;
   display: flex;

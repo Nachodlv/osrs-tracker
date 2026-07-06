@@ -899,6 +899,21 @@ function renderUnsafe() {
     }
   });
 
+  // Nothing on screen (e.g. a new profile from the Empty template): the
+  // right-click "New goal" affordance needs chart space to target, so offer an
+  // explicit centered button instead.
+  if (!flowEl.children.length) {
+    const empty = document.createElement("div");
+    empty.className = "chart-empty";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chart-empty-add";
+    btn.textContent = "+ New goal";
+    btn.addEventListener("click", () => openAddGoalModal(null));
+    empty.appendChild(btn);
+    flowEl.appendChild(empty);
+  }
+
   chartEl.innerHTML = "";
   chartEl.appendChild(flowEl);
   lastColumns = mergedColumns;
