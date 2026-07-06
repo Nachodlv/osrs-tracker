@@ -344,6 +344,81 @@ test("a fresh Ladlor profile excludes off-page goals without hiding anything", (
   assert.strictEqual(r.removed, 0, "nothing is removed; extras are simply absent");
 });
 
+test("ensureProfileTemplates pins existing profiles to __full__ and new ones to ladlor", () => {
+  const r = inCtx(`
+    const withSave = "p-withsave";
+    profilesMeta.profiles[withSave] = { name: "Old" };
+    localStorage.setItem(storageKeyFor(withSave), JSON.stringify({ done: {}, removed: {} }));
+    const noSave = "p-nosave";
+    profilesMeta.profiles[noSave] = { name: "Brand new" };
+    ensureProfileTemplates();
+    const res = {
+      withSave: profilesMeta.profiles[withSave].templateId,
+      noSave: profilesMeta.profiles[noSave].templateId
+    };
+    delete profilesMeta.profiles[withSave];
+    delete profilesMeta.profiles[noSave];
+    localStorage.removeItem(storageKeyFor("p-withsave"));
+    return res;
+  `);
+  assert.strictEqual(r.withSave, "__full__", "a profile with saved data keeps the full tree");
+  assert.strictEqual(r.noSave, "ladlor", "a brand-new profile starts from the ladlor template");
+});
+
+test("ensureProfileTemplates leaves an explicit templateId untouched", () => {
+  const r = inCtx(`
+    const id = "p-explicit";
+    profilesMeta.profiles[id] = { name: "Chosen", templateId: "empty" };
+    localStorage.setItem(storageKeyFor(id), JSON.stringify({ done: {} }));
+    ensureProfileTemplates();
+    const res = profilesMeta.profiles[id].templateId;
+    delete profilesMeta.profiles[id];
+    localStorage.removeItem(storageKeyFor(id));
+    return { tpl: res };
+  `);
+  assert.strictEqual(r.tpl, "empty", "an already-chosen template is not overridden");
+});
+
+test("importing rejects malformed templates", () => {
+  const r = inCtx(`
+    function threw(obj) { try { Templates.addUserTemplate(obj); return false; } catch (e) { return true; } }
+    return {
+      noName: threw({ goalData: [] }),
+      noGoalData: threw({ name: "X" }),
+      badGroups: threw({ name: "X", goalData: [], gearGroups: {} })
+    };
+  `);
+  assert.strictEqual(r.noName, true, "a template without a name is rejected");
+  assert.strictEqual(r.noGoalData, true, "a template without goalData is rejected");
+  assert.strictEqual(r.badGroups, true, "non-list gearGroups is rejected");
+});
+
+test("importing the same template twice creates two distinct entries", () => {
+  const r = inCtx(`
+    const before = Templates.listTemplates().length;
+    const a = Templates.addUserTemplate({ name: "Dup", goalData: [] });
+    const b = Templates.addUserTemplate({ name: "Dup", goalData: [] });
+    const after = Templates.listTemplates().length;
+    Templates.removeUserTemplate(a.id);
+    Templates.removeUserTemplate(b.id);
+    return { added: after - before, distinct: a.id !== b.id };
+  `);
+  assert.strictEqual(r.added, 2, "both imports are kept");
+  assert.strictEqual(r.distinct, true, "each import gets its own id");
+});
+
+test("templateFromCurrentProfile carries the profile's tier groups", () => {
+  const r = inCtx(`
+    createProfile("Geared", "ladlor");
+    render();
+    const tpl = templateFromCurrentProfile("Geared snapshot");
+    Templates.applyTemplate("ladlor");
+    return { groups: tpl.gearGroups.length, firstGroupHasMembers: (tpl.gearGroups[0] || []).length > 0 };
+  `);
+  assert.ok(r.groups > 0, "gear groups are captured from the profile");
+  assert.strictEqual(r.firstGroupHasMembers, true, "captured groups keep their members");
+});
+
 console.log("\n" + passed + " test(s) passed.");
 if (process.exitCode) console.error("Some app tests failed.");
 else console.log("All app tests passed.");
