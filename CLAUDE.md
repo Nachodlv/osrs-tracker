@@ -2,7 +2,7 @@
 
 OSRS ironman goal tracker (based on ladlorchart.com). Vanilla JS/HTML/CSS, no build step, no dependencies. Progress lives in browser localStorage, one key per profile.
 
-Deep architecture and full environment gotchas live in `docs/ARCHITECTURE.md`. Read that file before touching layout, edge-retargeting, drag & drop, or export/import, or when you hit a tooling error not covered below.
+Deep architecture and full environment gotchas live in `docs/ARCHITECTURE.md`. Read that file before touching layout, edge-retargeting, drag & drop, or export/import, or when you hit a tooling error not covered below. CI and scheduled workflows (tests, Ladlord chart crawl, on-demand `@claude`) are documented in `docs/AUTOMATION.md`.
 
 ## Files
 
