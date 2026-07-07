@@ -2767,6 +2767,7 @@ const profileSelectEl = document.getElementById("profileSelect");
 const profileDeleteBtnEl = document.getElementById("profileDeleteBtn");
 const profileNewBtnEl = document.getElementById("profileNewBtn");
 const profileRenameBtnEl = document.getElementById("profileRenameBtn");
+const profileChangeTemplateBtnEl = document.getElementById("profileChangeTemplateBtn");
 const profileExportBtnEl = document.getElementById("profileExportBtn");
 const profileImportBtnEl = document.getElementById("profileImportBtn");
 const profileImportInputEl = document.getElementById("profileImportInput");
@@ -2895,6 +2896,7 @@ document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (!profileNameModalEl.hidden) closeProfileNameModal();
   if (!profileDeleteModalEl.hidden) closeProfileDeleteModal();
+  if (changeTemplateModalEl && !changeTemplateModalEl.hidden) closeChangeTemplateModal();
   if (!templatesModalEl.hidden) closeTemplatesModal();
   if (templateChangesModalEl && !templateChangesModalEl.hidden) closeTemplateChangesModal();
 });
@@ -3145,6 +3147,134 @@ function openTemplateChangesModal(profileId) {
 
 if (templateChangesCancelEl) templateChangesCancelEl.addEventListener("click", closeTemplateChangesModal);
 if (templateChangesModalEl) templateChangesModalEl.addEventListener("click", e => { if (e.target === templateChangesModalEl) closeTemplateChangesModal(); });
+
+// --- Change a profile's template -------------------------------------------------
+// Apply a template to an existing save. "merge" adds the template's goals on top
+// of the current chart; "replace" swaps the profile's template content for the
+// selected one (removing the old template's goals). Either way the profile is
+// re-pinned to the selected template. The save's own progress, hidden goals, and
+// custom goals are kept: progress is keyed by goal id, so it survives on every
+// goal the new template shares.
+const changeTemplateModalEl = document.getElementById("changeTemplateModal");
+const changeTemplateSelectEl = document.getElementById("changeTemplateSelect");
+const changeTemplateOriginalRowEl = document.getElementById("changeTemplateOriginalRow");
+const changeTemplateOriginalSelectEl = document.getElementById("changeTemplateOriginalSelect");
+const changeTemplateReplaceLabelEl = document.getElementById("changeTemplateReplaceLabel");
+const changeTemplateConfirmEl = document.getElementById("changeTemplateConfirm");
+const changeTemplateCancelEl = document.getElementById("changeTemplateCancel");
+
+// The active profile's live goal data, used as the merge base when it has no
+// stored snapshot (an internal "__full__" profile renders the live tree).
+function currentContentSnapshot() {
+  return {
+    goalData: (typeof GOAL_DATA !== "undefined" ? GOAL_DATA : []),
+    gearGroups: (typeof GEAR_GROUPS !== "undefined" ? GEAR_GROUPS : [])
+  };
+}
+
+function flattenTemplateIds(content) {
+  const set = {};
+  (function walk(list) {
+    (list || []).forEach(n => { if (n && n.id) { set[n.id] = true; walk(n.children); } });
+  })(content && content.goalData);
+  return set;
+}
+
+// Union of two template snapshots: keep the base as-is and append the incoming
+// template's top-level goals and gear groups the base does not already have.
+function mergeTemplateContent(base, add) {
+  const ids = flattenTemplateIds(base);
+  const goalData = ((base && base.goalData) || []).slice();
+  ((add && add.goalData) || []).forEach(n => {
+    if (n && n.id && !ids[n.id]) { goalData.push(JSON.parse(JSON.stringify(n))); ids[n.id] = true; }
+  });
+  const sig = g => (g || []).slice().sort().join("|");
+  const baseSigs = new Set(((base && base.gearGroups) || []).map(sig));
+  const gearGroups = ((base && base.gearGroups) || []).slice();
+  ((add && add.gearGroups) || []).forEach(g => { if (!baseSigs.has(sig(g))) gearGroups.push(g.slice()); });
+  return { goalData, gearGroups };
+}
+
+function changeProfileTemplate(profileId, templateId, mode) {
+  const p = profilesMeta.profiles[profileId];
+  const t = Templates.getTemplate(templateId);
+  if (!p || !t || t.internal) return;
+  let base;
+  if (mode === "merge") {
+    const current = loadTemplateBase(profileId) || currentContentSnapshot();
+    base = mergeTemplateContent(current, { goalData: t.goalData, gearGroups: t.gearGroups });
+  } else {
+    base = { goalData: t.goalData, gearGroups: t.gearGroups };
+  }
+  saveTemplateBase(profileId, base);
+  p.templateId = t.id;
+  p.templateVersion = t.version || 1;
+  delete p.dismissedVersion;
+  saveProfilesMeta();
+  applyProfileTemplate(profileId);
+  render();              // rebuild currentNodes from the new base content
+  mergeTemplateGroups(); // then adopt any groups the template added
+  saveState();
+  render();
+  refreshProfileSelect();
+  renderTemplateBanner();
+  showToast(mode === "merge" ? `Added "${t.name}" to this profile` : `Replaced template with "${t.name}"`);
+}
+
+function closeChangeTemplateModal() { if (changeTemplateModalEl) changeTemplateModalEl.hidden = true; }
+
+// Replace is only offered when we know the old template (it still resolves, or
+// the user reconnected one from the list); otherwise only "add on top" is shown.
+function updateChangeTemplateModes() {
+  const p = profilesMeta.profiles[profilesMeta.activeId];
+  const originalResolves = !!Templates.getTemplate(p && p.templateId);
+  const reconnected = !changeTemplateOriginalRowEl.hidden && !!changeTemplateOriginalSelectEl.value;
+  const replaceAllowed = originalResolves || reconnected;
+  const replaceRadio = changeTemplateModalEl.querySelector('input[value="replace"]');
+  if (replaceRadio) replaceRadio.disabled = !replaceAllowed;
+  if (changeTemplateReplaceLabelEl) changeTemplateReplaceLabelEl.classList.toggle("disabled", !replaceAllowed);
+  if (!replaceAllowed && replaceRadio && replaceRadio.checked) {
+    const mergeRadio = changeTemplateModalEl.querySelector('input[value="merge"]');
+    if (mergeRadio) mergeRadio.checked = true;
+  }
+}
+
+function fillTemplateOptions(sel, includeBlank) {
+  sel.innerHTML = "";
+  if (includeBlank) {
+    const blank = document.createElement("option");
+    blank.value = ""; blank.textContent = "— select original template —";
+    sel.appendChild(blank);
+  }
+  Templates.listTemplates().forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = t.id; opt.textContent = t.name;
+    sel.appendChild(opt);
+  });
+}
+
+function openChangeTemplateModal() {
+  if (!changeTemplateModalEl) return;
+  const p = profilesMeta.profiles[profilesMeta.activeId];
+  const originalMissing = !Templates.getTemplate(p && p.templateId);
+  fillTemplateOptions(changeTemplateSelectEl, false);
+  changeTemplateOriginalRowEl.hidden = !originalMissing;
+  if (originalMissing) fillTemplateOptions(changeTemplateOriginalSelectEl, true);
+  const mergeRadio = changeTemplateModalEl.querySelector('input[value="merge"]');
+  if (mergeRadio) mergeRadio.checked = true;
+  updateChangeTemplateModes();
+  changeTemplateModalEl.hidden = false;
+}
+
+if (profileChangeTemplateBtnEl) profileChangeTemplateBtnEl.addEventListener("click", openChangeTemplateModal);
+if (changeTemplateOriginalSelectEl) changeTemplateOriginalSelectEl.addEventListener("change", updateChangeTemplateModes);
+if (changeTemplateCancelEl) changeTemplateCancelEl.addEventListener("click", closeChangeTemplateModal);
+if (changeTemplateModalEl) changeTemplateModalEl.addEventListener("click", e => { if (e.target === changeTemplateModalEl) closeChangeTemplateModal(); });
+if (changeTemplateConfirmEl) changeTemplateConfirmEl.addEventListener("click", () => {
+  const modeInput = changeTemplateModalEl.querySelector('input[name="changeTemplateMode"]:checked');
+  changeProfileTemplate(profilesMeta.activeId, changeTemplateSelectEl.value, modeInput ? modeInput.value : "merge");
+  closeChangeTemplateModal();
+});
 
 // --- Template management ---------------------------------------------------------
 // Add or remove new-profile templates. Built-in templates (Empty, Ladlor) are
