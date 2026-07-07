@@ -47,7 +47,10 @@ jobs:
           git checkout -b "$BRANCH"
           git add templates.js templates/ladlor.json
           git commit -m "Bump Ladlord template to v${NEW_VERSION} from live crawl"
-          git push --force-with-lease -u origin "$BRANCH"
+          # First run creates the branch; a rerun overwrites this bot-owned branch
+          # (the CI clone is shallow and has no lease baseline, so force-with-lease
+          # would reject with "stale info").
+          git push -u origin "$BRANCH" || git push --force -u origin "$BRANCH"
 
           # A PR already exists for this branch: the push refreshed it, nothing to do.
           if [ -n "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
