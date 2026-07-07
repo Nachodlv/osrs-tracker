@@ -117,18 +117,27 @@ async function fetchLiveTitleMap() {
   const re = /"([a-z0-9]+(?:-[a-z0-9]+)+)"\s*:\s*"([^"]{1,60})"/g;
   let x;
   while ((x = re.exec(js)) !== null) {
-    // Skip obvious non-goal keys (svg/aria/css attribute names seen in React).
+    // Skip obvious non-goal keys (svg/aria/css attribute names seen in React)
+    // and skill-requirement labels like "lvl-92-ranged" (not goals).
     if (/^(aria|clip|color|accent|arabic|alignment|baseline|annotation|cap|accept)/.test(x[1])) continue;
+    if (/^lvl-\d/.test(x[1])) continue;
     map[x[1]] = x[2];
   }
   return map;
 }
 
+// Canonical comparison key. data.js ids are namespaced (e.g. "gear.osmumten-s-
+// fang") while the live map uses the bare slug ("osmumtens-fang"); the two also
+// encode possessives differently ("-s-" vs "s"). Strip the namespace and every
+// non-alphanumeric char so both collapse to the same key and possessive/hyphen
+// differences stop showing up as false drift.
+function canonId(id) {
+  return String(id).split(".").pop().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
 function collectIds(nodes, set) {
   (nodes || []).forEach(n => {
-    // data.js ids are namespaced (e.g. "gear.dragon-scimitar"); the live map
-    // uses the bare slug. Compare on the last dotted segment.
-    set.add(String(n.id).split(".").pop());
+    set.add(canonId(n.id));
     collectIds(n.children, set);
   });
   return set;
@@ -146,7 +155,7 @@ async function check(GOAL_DATA) {
   }
   const ours = collectIds(GOAL_DATA, new Set());
   const liveIds = Object.keys(live);
-  const onlyLive = liveIds.filter(id => !ours.has(id)).map(id => ({ id, title: live[id] }));
+  const onlyLive = liveIds.filter(id => !ours.has(canonId(id))).map(id => ({ id, title: live[id] }));
   console.log(`\nLive chart exposes ${liveIds.length} id->title entries.`);
   if (onlyLive.length) {
     console.log(`\n${onlyLive.length} id(s) on the live chart but NOT in data.js:`);
