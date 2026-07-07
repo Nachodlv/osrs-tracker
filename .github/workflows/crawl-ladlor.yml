@@ -1,11 +1,13 @@
 name: Crawl Ladlord chart
 
 # Weekly (and on-demand) crawl of ladlorchart.com. When the live chart drifts
-# from the built-in Ladlord template, the crawler bumps the template version and
-# regenerates templates/ladlor.json; this workflow pushes those changes to a
-# branch and opens a PR (or, if the repo blocks Actions from opening PRs, an
-# issue) with the drift report so a maintainer can wire the new goals into
-# data.js. It never pushes to master directly.
+# from the built-in Ladlord template (new goal ids and/or reshuffled tier
+# groups), the crawler bumps the template version and regenerates
+# templates/ladlor.json; this workflow pushes those changes to a branch and opens
+# a PR (or, if the repo blocks Actions from opening PRs, an issue) with the drift
+# report so a maintainer can wire the changes into data.js. It never pushes to
+# master directly. Group drift is read from the rendered SPA via the Chrome that
+# ships preinstalled on the ubuntu runner (see CHROME_PATH below).
 
 on:
   schedule:
@@ -30,6 +32,10 @@ jobs:
         id: crawl
         env:
           DRIFT_REPORT: ${{ runner.temp }}/drift-report.md
+          # ubuntu-latest ships Google Chrome; --ci renders the SPA to diff tier
+          # groups. If this path is ever absent the group check degrades to a
+          # warning and id drift still runs.
+          CHROME_PATH: /usr/bin/google-chrome
         run: node tools/crawl-ladlor.js --ci
 
       - name: Push branch and open PR or issue
