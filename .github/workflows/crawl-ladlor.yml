@@ -79,10 +79,15 @@ jobs:
             cat "$DRIFT_REPORT"
           } > "${DRIFT_REPORT}.issue"
 
-          # Reuse an existing open issue for this branch if there is one.
+          # Ensure the label exists (no-op if it already does), then reuse an
+          # existing open issue for this branch or open a new labelled one.
+          gh label create "template-drift" \
+            --color FBCA04 \
+            --description "Ladlord template drifted from the live chart (opened by the crawl action)" \
+            2>/dev/null || true
           EXISTING="$(gh issue list --state open --search "in:title $TITLE" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -n1)"
           if [ -n "$EXISTING" ]; then
             echo "Issue #$EXISTING already open for $TITLE."
           else
-            gh issue create --title "$TITLE" --body-file "${DRIFT_REPORT}.issue"
+            gh issue create --title "$TITLE" --body-file "${DRIFT_REPORT}.issue" --label "template-drift"
           fi
