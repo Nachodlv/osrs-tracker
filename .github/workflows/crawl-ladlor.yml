@@ -1,0 +1,56 @@
+name: Crawl Ladlord chart
+
+# Weekly (and on-demand) crawl of ladlorchart.com. When the live chart drifts
+# from the built-in Ladlord template, the crawler bumps the template version and
+# regenerates templates/ladlor.json; this workflow opens a PR with the drift
+# report so a maintainer can wire the new goals into data.js. It never pushes to
+# master directly.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Crawl live chart and detect drift
+        id: crawl
+        env:
+          DRIFT_REPORT: ${{ runner.temp }}/drift-report.md
+        run: node tools/crawl-ladlor.js --ci
+
+      - name: Open pull request
+        if: steps.crawl.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_VERSION: ${{ steps.crawl.outputs.newVersion }}
+          DRIFT_REPORT: ${{ runner.temp }}/drift-report.md
+        run: |
+          set -euo pipefail
+          BRANCH="chore/ladlor-crawl-v${NEW_VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add templates.js templates/ladlor.json
+          git commit -m "Bump Ladlord template to v${NEW_VERSION} from live crawl"
+          git push --force-with-lease -u origin "$BRANCH"
+          if [ -n "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            echo "PR for $BRANCH already open; pushed the refreshed crawl to it."
+          else
+            gh pr create \
+              --title "Ladlord chart drift: bump template to v${NEW_VERSION}" \
+              --body-file "$DRIFT_REPORT" \
+              --base master \
+              --head "$BRANCH"
+          fi

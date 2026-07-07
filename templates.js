@@ -37,21 +37,26 @@
       .map(function (n) { return Object.assign({}, n, { children: [] }); });
   }
 
-  // Built-in templates offered in the New profile picker.
+  // Built-in templates offered in the New profile picker. Each carries a
+  // `version`: bump it here whenever a template's goalData/gearGroups change, so
+  // profiles pinned to an older version see the "template updated" banner and can
+  // review + apply the changes (see templateUpdateInfo in app.js).
   var BUILTIN_TEMPLATES = [
-    { id: "empty", name: "Empty", builtin: true, goalData: [], gearGroups: [] },
+    { id: "empty", name: "Empty", builtin: true, version: 1, goalData: [], gearGroups: [] },
     {
       id: DEFAULT_TEMPLATE_ID,
       name: "Ironman Ladlord Chart",
       builtin: true,
+      version: 1,
       goalData: ladlorPageGoals(FULL_GOAL_DATA, FULL_GEAR_GROUPS),
       gearGroups: FULL_GEAR_GROUPS
     }
   ];
 
-  // The full historical tree, for pre-existing profiles. Not user-facing.
+  // The full historical tree, for pre-existing profiles. Not user-facing and
+  // never versioned (internal templates never raise the update banner).
   var FULL_TEMPLATE = {
-    id: FULL_TEMPLATE_ID, name: "Full (legacy)", builtin: true, internal: true,
+    id: FULL_TEMPLATE_ID, name: "Full (legacy)", builtin: true, internal: true, version: 1,
     goalData: FULL_GOAL_DATA, gearGroups: FULL_GEAR_GROUPS
   };
 
@@ -60,7 +65,10 @@
       var raw = global.localStorage && global.localStorage.getItem(TEMPLATES_KEY);
       if (!raw) return [];
       var arr = JSON.parse(raw);
-      return Array.isArray(arr) ? arr : [];
+      if (!Array.isArray(arr)) return [];
+      // Backfill a version on templates saved before versioning existed.
+      arr.forEach(function (t) { if (t && t.version == null) t.version = 1; });
+      return arr;
     } catch (e) {
       console.error("Failed to load user templates", e);
       return [];
@@ -88,9 +96,16 @@
   // template when the id is unknown (e.g. a user template that was removed).
   function applyTemplate(id) {
     var t = getTemplate(id) || getTemplate(DEFAULT_TEMPLATE_ID);
-    global.GOAL_DATA = deepClone(t ? t.goalData : []);
-    global.GEAR_GROUPS = deepClone(t ? t.gearGroups : []);
-    api.currentTemplateId = t ? t.id : DEFAULT_TEMPLATE_ID;
+    return applyContent(t ? t.goalData : [], t ? t.gearGroups : [], t ? t.id : DEFAULT_TEMPLATE_ID);
+  }
+
+  // Point the global data at explicit content. Used to render a profile from its
+  // pinned template snapshot (see applyProfileTemplate in app.js) rather than the
+  // live template, so a template update does not change a profile until accepted.
+  function applyContent(goalData, gearGroups, id) {
+    global.GOAL_DATA = deepClone(goalData || []);
+    global.GEAR_GROUPS = deepClone(gearGroups || []);
+    api.currentTemplateId = id || DEFAULT_TEMPLATE_ID;
     return api.currentTemplateId;
   }
 
@@ -104,7 +119,7 @@
     if (obj.gearGroups != null && !Array.isArray(obj.gearGroups)) throw new Error("gearGroups must be a list");
     return {
       id: "tpl-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7),
-      name: name, goalData: obj.goalData, gearGroups: obj.gearGroups || []
+      name: name, version: 1, goalData: obj.goalData, gearGroups: obj.gearGroups || []
     };
   }
 
@@ -114,6 +129,26 @@
     list.push(rec);
     saveUserTemplates(list);
     return rec;
+  }
+
+  // Replace an existing user template's content in place and bump its version, so
+  // profiles created from it can be prompted to adopt the new content. Keeps the
+  // template id (and thus the pin from existing profiles) intact.
+  function updateUserTemplate(id, obj) {
+    var incoming = normalizeImported(obj);
+    var list = loadUserTemplates();
+    var found = null;
+    list.forEach(function (t) {
+      if (t.id !== id) return;
+      found = t;
+      t.name = incoming.name;
+      t.goalData = incoming.goalData;
+      t.gearGroups = incoming.gearGroups;
+      t.version = (t.version || 1) + 1;
+    });
+    if (!found) throw new Error("template not found");
+    saveUserTemplates(list);
+    return found;
   }
 
   function removeUserTemplate(id) {
@@ -128,7 +163,9 @@
     listTemplates: listTemplates,
     getTemplate: getTemplate,
     applyTemplate: applyTemplate,
+    applyContent: applyContent,
     addUserTemplate: addUserTemplate,
+    updateUserTemplate: updateUserTemplate,
     removeUserTemplate: removeUserTemplate
   };
   global.Templates = api;

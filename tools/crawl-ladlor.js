@@ -23,6 +23,33 @@ const https = require("https");
 
 const ROOT = path.join(__dirname, "..");
 const OUT = path.join(ROOT, "templates", "ladlor.json");
+const TEMPLATES_JS = path.join(ROOT, "templates.js");
+
+// Read/bump the built-in "ladlor" template version declared in templates.js.
+// The version lives on the DEFAULT_TEMPLATE_ID entry of BUILTIN_TEMPLATES; we
+// find the `version: N` that sits between `id: DEFAULT_TEMPLATE_ID` and its
+// `goalData:` line and rewrite just that number.
+function ladlorVersionBlock(src) {
+  const start = src.indexOf("id: DEFAULT_TEMPLATE_ID");
+  if (start === -1) throw new Error("could not locate the ladlor template entry in templates.js");
+  const rel = src.slice(start).match(/version:\s*(\d+)/);
+  if (!rel) throw new Error("could not locate the ladlor template version in templates.js");
+  return { index: start + rel.index, match: rel[0], version: parseInt(rel[1], 10) };
+}
+
+function readLadlorVersion() {
+  return ladlorVersionBlock(fs.readFileSync(TEMPLATES_JS, "utf8")).version;
+}
+
+function bumpLadlorVersion() {
+  const src = fs.readFileSync(TEMPLATES_JS, "utf8");
+  const blk = ladlorVersionBlock(src);
+  const next = blk.version + 1;
+  const updated = src.slice(0, blk.index) + "version: " + next +
+    src.slice(blk.index + blk.match.length);
+  fs.writeFileSync(TEMPLATES_JS, updated);
+  return next;
+}
 
 function loadDataJs() {
   const src = fs.readFileSync(path.join(ROOT, "data.js"), "utf8");
@@ -50,6 +77,7 @@ function generate() {
   const template = {
     name: "Ironman Ladlord Chart",
     source: "https://ladlorchart.com",
+    version: readLadlorVersion(),
     generatedAt: new Date().toISOString(),
     goalData: goalData,
     gearGroups: GEAR_GROUPS
@@ -106,28 +134,85 @@ function collectIds(nodes, set) {
   return set;
 }
 
+// Returns { liveCount, onlyLive: [{id, title}, ...] } or null if the live fetch
+// failed. onlyLive is the set of goal ids on ladlorchart.com missing from data.js.
 async function check(GOAL_DATA) {
   let live;
   try {
     live = await fetchLiveTitleMap();
   } catch (e) {
     console.error("--check skipped: " + e.message);
-    return;
+    return null;
   }
   const ours = collectIds(GOAL_DATA, new Set());
   const liveIds = Object.keys(live);
-  const onlyLive = liveIds.filter(id => !ours.has(id));
+  const onlyLive = liveIds.filter(id => !ours.has(id)).map(id => ({ id, title: live[id] }));
   console.log(`\nLive chart exposes ${liveIds.length} id->title entries.`);
   if (onlyLive.length) {
     console.log(`\n${onlyLive.length} id(s) on the live chart but NOT in data.js:`);
-    onlyLive.forEach(id => console.log(`  + ${id}  (${live[id]})`));
+    onlyLive.forEach(g => console.log(`  + ${g.id}  (${g.title})`));
     console.log("\nAdd these to data.js (with correct parents/icons), then rerun.");
   } else {
     console.log("\nNo new goal ids detected on the live chart. data.js is up to date.");
   }
+  return { liveCount: liveIds.length, onlyLive };
+}
+
+// Append key=value to $GITHUB_OUTPUT so the workflow can branch on the result.
+function setOutput(key, value) {
+  const f = process.env.GITHUB_OUTPUT;
+  if (f) fs.appendFileSync(f, `${key}=${value}\n`);
+}
+
+// CI mode: regenerate the JSON, crawl the live chart, and if it has drifted
+// (new ids) bump the template version so the update banner fires. Writes a
+// human-readable drift report to $DRIFT_REPORT (or drift-report.md) for the PR
+// body, and emits `changed`/`newVersion` GitHub outputs. It never edits data.js
+// (the live bundle has no edge list, so parents/icons need a human); the PR it
+// produces bumps the version + regenerated JSON and lists what to wire in.
+async function ci() {
+  const { GOAL_DATA } = generate();
+  const result = await check(GOAL_DATA);
+  if (!result) {
+    setOutput("changed", "false");
+    process.exitCode = 1; // live fetch failed; surface it in the workflow.
+    return;
+  }
+  const drift = result.onlyLive;
+  const reportPath = process.env.DRIFT_REPORT || path.join(ROOT, "drift-report.md");
+  if (!drift.length) {
+    // No real change: discard the timestamp-only churn in the regenerated JSON.
+    setOutput("changed", "false");
+    console.log("\nNo template drift. Nothing to update.");
+    return;
+  }
+  const newVersion = bumpLadlorVersion();
+  // Re-emit the JSON so its embedded version matches the bumped templates.js.
+  generate();
+  const lines = [
+    "The Ladlord chart crawl found goal ids on the live site that are missing",
+    "from `data.js`, so the built-in Ladlord template drifted.",
+    "",
+    `Bumped the template version to **${newVersion}** (profiles pinned to an`,
+    "older version will see the update banner).",
+    "",
+    `### ${drift.length} id(s) on the live chart but not in data.js`,
+    "",
+    ...drift.map(g => `- \`${g.id}\` — ${g.title}`),
+    "",
+    "Wire these into `data.js` with the correct parents / icons / links (and add",
+    "them to a `GEAR_GROUPS` tier if they belong on the page), then rerun",
+    "`node tools/crawl-ladlor.js` to regenerate `templates/ladlor.json`.",
+    ""
+  ];
+  fs.writeFileSync(reportPath, lines.join("\n"));
+  setOutput("changed", "true");
+  setOutput("newVersion", String(newVersion));
+  console.log(`\nBumped ladlor template version to ${newVersion}; wrote ${path.relative(ROOT, reportPath)}.`);
 }
 
 (async function main() {
+  if (process.argv.includes("--ci")) return ci();
   const { GOAL_DATA } = generate();
   if (process.argv.includes("--check")) await check(GOAL_DATA);
 })();

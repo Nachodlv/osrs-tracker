@@ -1306,6 +1306,78 @@ button.add-link:hover {
   font-size: 0.8rem;
 }
 
+/* Template-update banner (below the header) and the changes review modal. */
+.template-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 12px auto 0;
+  max-width: 1200px;
+  padding: 10px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--gold);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+/* A CSS display rule overrides the [hidden] attribute, so restore it here or the
+   emptied banner would linger as a blank bar after an update is applied. */
+.template-banner[hidden] { display: none; }
+
+.template-banner-text { color: var(--text); }
+
+.template-banner-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.template-banner-actions button {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.template-banner-actions button:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+.template-banner-actions button.primary {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  font-weight: bold;
+}
+
+.template-changes-body {
+  max-height: 45vh;
+  overflow-y: auto;
+  margin: 0 0 16px;
+}
+
+.template-changes-heading {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gold-bright, var(--gold));
+  margin: 12px 0 4px;
+}
+
+.template-changes-list {
+  list-style: disc;
+  margin: 0 0 8px;
+  padding-left: 20px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
 .remove-btn:hover {
   color: var(--red);
 }
