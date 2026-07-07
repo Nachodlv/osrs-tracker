@@ -1,12 +1,11 @@
 {
   "hooks": {
-    "PostToolUse": [
+    "Stop": [
       {
-        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "node tools/bump-hook.js"
+            "command": "node tools/stop-hook.js"
           }
         ]
       }

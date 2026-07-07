@@ -37,14 +37,14 @@ Most graph/data questions can be answered from here without reading `data.js` (i
 - Migration must stay idempotent (safe to run on every load, there is an eager migration pass over all profiles at startup).
 
 ### Tests
-- Run `node test-migration.js` after ANY change to data ids, state shape, or migration logic, and `node test-app.js` after changes to graph/state/render logic. All tests must pass before finishing.
+- Run `node test-migration.js` after ANY change to data ids, state shape, or migration logic, and `node test-app.js` after changes to graph/state/render logic. All tests must pass before finishing. A project Stop hook (`tools/stop-hook.js`) also runs the affected suite(s) automatically at end of turn (test-app for app/data/templates, both for migration/data) and blocks with the output if one fails, but keep running them yourself while iterating.
 - Prefer adding a case to `test-app.js` over `preview_eval` for graph/state/layout bugs. Its harness runs assertions inside the vm context via `vm.runInContext` (top-level `let`/`const` like `state` are not reachable as context props, but `function` declarations like `getGraph`, `reparentNode`, `computeVisibility` are). Test custom goals use type `"quest"` to stay deterministic (no network fetch). CSS and real pixel rendering still need the preview tools.
 - When testing in the browser: create a NEW profile. Never test against the TuuxSolo profile, it holds real progress.
 - For ad-hoc state/graph probes, add a temporary case to `test-app.js` (reuse its `makeContext`/`inCtx`) and delete it after; do NOT paste a fresh vm + DOM-stub harness inline (that duplicates ~60 lines of boilerplate per probe).
 - `templates/ladlor.json` is generated (~1900 lines): never Read it. Regenerate with `node tools/crawl-ladlor.js` and diff if needed.
 
 ### Conventions
-- Bump the `?v=N` cache-buster in index.html on every change to js/css files (bump all references together; grep `?v=` for the current value). Do the bump IN THE SAME Edit batch as the change that needs it, never as a separate step: any touch of index.html re-injects the whole ~200-line file into context, so a second touch wastes thousands of tokens.
+- Bump the `?v=N` cache-buster in index.html on every change to js/css files (bump all references together; grep `?v=` for the current value). The project Stop hook (`tools/stop-hook.js`, wired in `.claude/settings.json`) bumps automatically once per turn when a referenced asset changed, so a manual bump is usually unnecessary; `node tools/bump-version.js` (or `--check`) remains for CLI/manual use. If you do bump index.html by hand, do it IN THE SAME Edit batch as the change that needs it, never as a separate step: any touch of index.html re-injects the whole ~200-line file into context, so a second touch wastes thousands of tokens.
 - Keep it dependency-free vanilla JS; single files, no modules/bundler.
 - Comments: brief and functional only. No history/changelog-style comments.
 - New user-facing state edits go through `saveState()` + `render()`; `render()` must never leave the page blank (renderUnsafe builds off-screen; the wrapper keeps the last good render on error).
