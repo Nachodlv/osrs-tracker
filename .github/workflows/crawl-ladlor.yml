@@ -2,9 +2,10 @@ name: Crawl Ladlord chart
 
 # Weekly (and on-demand) crawl of ladlorchart.com. When the live chart drifts
 # from the built-in Ladlord template, the crawler bumps the template version and
-# regenerates templates/ladlor.json; this workflow opens a PR with the drift
-# report so a maintainer can wire the new goals into data.js. It never pushes to
-# master directly.
+# regenerates templates/ladlor.json; this workflow pushes those changes to a
+# branch and opens a PR (or, if the repo blocks Actions from opening PRs, an
+# issue) with the drift report so a maintainer can wire the new goals into
+# data.js. It never pushes to master directly.
 
 on:
   schedule:
@@ -14,6 +15,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   crawl:
@@ -30,7 +32,7 @@ jobs:
           DRIFT_REPORT: ${{ runner.temp }}/drift-report.md
         run: node tools/crawl-ladlor.js --ci
 
-      - name: Open pull request
+      - name: Push branch and open PR or issue
         if: steps.crawl.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -39,18 +41,55 @@ jobs:
         run: |
           set -euo pipefail
           BRANCH="chore/ladlor-crawl-v${NEW_VERSION}"
+          TITLE="Ladlord chart drift: bump template to v${NEW_VERSION}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add templates.js templates/ladlor.json
           git commit -m "Bump Ladlord template to v${NEW_VERSION} from live crawl"
-          git push --force-with-lease -u origin "$BRANCH"
+          # First run creates the branch; a rerun overwrites this bot-owned branch
+          # (the CI clone is shallow and has no lease baseline, so force-with-lease
+          # would reject with "stale info").
+          git push -u origin "$BRANCH" || git push --force -u origin "$BRANCH"
+
+          # A PR already exists for this branch: the push refreshed it, nothing to do.
           if [ -n "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
             echo "PR for $BRANCH already open; pushed the refreshed crawl to it."
-          else
-            gh pr create \
-              --title "Ladlord chart drift: bump template to v${NEW_VERSION}" \
+            exit 0
+          fi
+
+          # Try to open a PR. Repos that disable "Allow GitHub Actions to create
+          # and approve pull requests" reject this with the default token, so on
+          # failure fall back to an issue (which the token can always create).
+          if gh pr create \
+              --title "$TITLE" \
               --body-file "$DRIFT_REPORT" \
               --base master \
-              --head "$BRANCH"
+              --head "$BRANCH"; then
+            exit 0
+          fi
+
+          echo "gh pr create failed (Actions likely not permitted to open PRs); opening an issue instead."
+          COMPARE="${{ github.server_url }}/${{ github.repository }}/compare/master...${BRANCH}?expand=1"
+          {
+            echo "The crawl pushed branch \`${BRANCH}\`, but this repo does not allow GitHub Actions to open pull requests."
+            echo
+            echo "Open the PR manually: ${COMPARE}"
+            echo
+            echo "Or comment \`@claude wire these new goals into data.js\` on this issue to have Claude add them (with icons/links) and open a draft PR."
+            echo
+            cat "$DRIFT_REPORT"
+          } > "${DRIFT_REPORT}.issue"
+
+          # Ensure the label exists (no-op if it already does), then reuse an
+          # existing open issue for this branch or open a new labelled one.
+          gh label create "template-drift" \
+            --color FBCA04 \
+            --description "Ladlord template drifted from the live chart (opened by the crawl action)" \
+            2>/dev/null || true
+          EXISTING="$(gh issue list --state open --search "in:title $TITLE" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -n1)"
+          if [ -n "$EXISTING" ]; then
+            echo "Issue #$EXISTING already open for $TITLE."
+          else
+            gh issue create --title "$TITLE" --body-file "${DRIFT_REPORT}.issue" --label "template-drift"
           fi
