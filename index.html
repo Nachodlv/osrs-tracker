@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Iron Tracker</title>
-<link rel="stylesheet" href="style.css?v=47" />
+<link rel="stylesheet" href="style.css?v=48" />
 </head>
 <body>
   <header class="topbar">
@@ -24,6 +24,7 @@
           <div id="profileMenu" class="popover popover-right" hidden>
             <button id="profileNewBtn" title="Create a new profile">+ New profile</button>
             <button id="profileRenameBtn" title="Rename current profile">Rename</button>
+            <button id="profileChangeTemplateBtn" title="Apply a template to this profile">Change template</button>
             <button id="profileExportBtn" title="Download this profile as a file (import it in any other browser)">Export</button>
             <button id="profileImportBtn" title="Import a profile from an exported file">Import</button>
             <button id="manageTemplatesBtn" title="Add or remove new-profile templates">Manage templates</button>
@@ -173,6 +174,29 @@
     </form>
   </div>
 
+  <div id="changeTemplateModal" class="modal-overlay" hidden>
+    <div class="modal-card">
+      <h2>Change template</h2>
+      <p class="modal-body-text">Apply a template to this profile. Your progress, hidden goals, and custom goals are always kept.</p>
+      <label class="modal-label">
+        Template to apply
+        <select id="changeTemplateSelect"></select>
+      </label>
+      <div id="changeTemplateOriginalRow" class="modal-label" hidden>
+        This profile's original template is no longer available. Pick which one it was to allow replacing it.
+        <select id="changeTemplateOriginalSelect"></select>
+      </div>
+      <fieldset class="change-template-modes">
+        <label><input type="radio" name="changeTemplateMode" value="merge" checked /> Add on top of my current save</label>
+        <label id="changeTemplateReplaceLabel"><input type="radio" name="changeTemplateMode" value="replace" /> Remove the old template and replace it</label>
+      </fieldset>
+      <div class="modal-actions">
+        <button type="button" id="changeTemplateCancel">Cancel</button>
+        <button type="button" id="changeTemplateConfirm" class="primary">Apply</button>
+      </div>
+    </div>
+  </div>
+
   <div id="profileDeleteModal" class="modal-overlay" hidden>
     <div class="modal-card">
       <h2>Delete this profile?</h2>
@@ -214,9 +238,9 @@
     </div>
   </div>
 
-  <script src="migration.js?v=47"></script>
-  <script src="data.js?v=47"></script>
-  <script src="templates.js?v=47"></script>
-  <script src="app.js?v=47"></script>
+  <script src="migration.js?v=48"></script>
+  <script src="data.js?v=48"></script>
+  <script src="templates.js?v=48"></script>
+  <script src="app.js?v=48"></script>
 </body>
 </html>

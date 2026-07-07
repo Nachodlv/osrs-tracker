@@ -523,6 +523,41 @@ test("updateUserTemplate bumps the version in place, keeping the id", () => {
   assert.strictEqual(r.goals, 2, "adopts the new content");
 });
 
+test("mergeTemplateContent unions goals and groups, keeping the base's own copy of shared ids", () => {
+  const r = JSON.parse(vm.runInContext(`JSON.stringify((function(){
+    const base = {
+      goalData: [ { id: "a", title: "A (mine)", children: [] }, { id: "b", title: "B", children: [] } ],
+      gearGroups: [ ["a", "b"] ]
+    };
+    const add = {
+      goalData: [ { id: "a", title: "A (template)", children: [] }, { id: "c", title: "C", children: [] } ],
+      gearGroups: [ ["a", "b"], ["c", "d"] ]
+    };
+    return mergeTemplateContent(base, add);
+  })())`, ctx));
+  assert.deepStrictEqual(r.goalData.map(n => n.id), ["a", "b", "c"], "adds only ids new to the base");
+  assert.strictEqual(r.goalData[0].title, "A (mine)", "keeps the base's copy of a shared id");
+  assert.strictEqual(r.gearGroups.length, 2, "appends only the group with a new signature");
+});
+
+test("changeProfileTemplate replaces the base and re-pins to the selected template", () => {
+  const r = inCtx(`
+    const t = Templates.addUserTemplate({ name: "Swap", goalData: [{ id: "swap-goal", title: "Swap", children: [] }] });
+    createProfile("ToSwap", "ladlor");
+    const id = profilesMeta.activeId;
+    changeProfileTemplate(id, t.id, "replace");
+    const p = profilesMeta.profiles[id];
+    const base = loadTemplateBase(id);
+    const ids = (base.goalData || []).map(n => n.id);
+    const tid = t.id;
+    Templates.removeUserTemplate(t.id);
+    return { pinned: p.templateId, tid, version: p.templateVersion, onlyNew: ids.length === 1 && ids[0] === "swap-goal" };
+  `);
+  assert.strictEqual(r.pinned, r.tid, "pins to the selected template id");
+  assert.ok(r.version >= 1, "records the selected template's version");
+  assert.strictEqual(r.onlyNew, true, "replace swaps the base for the selected template's content");
+});
+
 console.log("\n" + passed + " test(s) passed.");
 if (process.exitCode) console.error("Some app tests failed.");
 else console.log("All app tests passed.");
