@@ -24,7 +24,7 @@ const INDEX = path.join(ROOT, "index.html");
 const TEST_TRIGGERS = {
   "app.js": ["test-app.js"],
   "templates.js": ["test-app.js"],
-  "data.js": ["test-app.js", "test-migration.js"],
+  "data.js": ["test-app.js", "test-migration.js", "test-crawl.js"],
   "migration.js": ["test-app.js", "test-migration.js"],
 };
 

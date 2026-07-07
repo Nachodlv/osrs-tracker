@@ -17,3 +17,5 @@ jobs:
         run: node test-migration.js
       - name: Run app tests
         run: node test-app.js
+      - name: Run crawl tests
+        run: node test-crawl.js

@@ -1,0 +1,138 @@
+// Node test runner for the Ladlor crawl tool's pure logic (no browser/network):
+// classifyGroups (auto-add vs review classification) and applyNewGoals (the
+// data.js text writer). The rendering path needs Chrome and is not covered here.
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { classifyGroups, applyNewGoals, canonId } = require("./tools/crawl-ladlor");
+
+let passed = 0, failed = 0;
+function assert(cond, msg) {
+  if (cond) passed++;
+  else { failed++; console.error("FAIL: " + msg); }
+}
+
+const member = slug => ({
+  slug, title: slug, canon: canonId(slug),
+  wiki: "https://oldschool.runescape.wiki/w/" + slug,
+  icon: "https://oldschool.runescape.wiki/images/" + slug + ".png"
+});
+const dataGroup = (...ids) => ({ ids, canon: ids.map(canonId) });
+const idMapOf = (...ids) => new Map(ids.map(id => [canonId(id), id]));
+
+// 1. Purely additive: a new member joins an existing tier (no removals).
+{
+  const { plan } = classifyGroups(
+    idMapOf("gear.a", "gear.b"),
+    [[member("a"), member("b"), member("c-new")]],
+    [dataGroup("gear.a", "gear.b")]
+  );
+  assert(plan.goals.length === 1 && plan.goals[0].id === "gear.c-new", "additive: one new goal");
+  assert(plan.tierAppends.length === 1 && plan.tierAppends[0].anchor === "gear.a" &&
+    plan.tierAppends[0].ids[0] === "gear.c-new", "additive: appended to existing tier");
+  assert(plan.reviewLines.length === 0, "additive: nothing to review");
+}
+
+// 2. Rename: a tier loses a member and gains an unknown one -> review, never auto.
+{
+  const { plan } = classifyGroups(
+    idMapOf("gear.a", "gear.old"),
+    [[member("a"), member("new-name")]],
+    [dataGroup("gear.a", "gear.old")]
+  );
+  assert(plan.goals.length === 0, "rename: nothing auto-added");
+  assert(plan.reviewLines.some(l => /possible rename/.test(l)), "rename: flagged for review");
+}
+
+// 3. A wholly-new tier at the end, nothing gone -> auto-add, appended (before null).
+{
+  const { plan } = classifyGroups(
+    idMapOf("gear.a"),
+    [[member("a")], [member("x-new"), member("y-new")]],
+    [dataGroup("gear.a")]
+  );
+  assert(plan.newTiers.length === 1 && plan.newTiers[0].ids.join(",") === "gear.x-new,gear.y-new",
+    "new tier: added with both members");
+  assert(plan.newTiers[0].before === null, "new tier at end: before is null (append)");
+  assert(plan.goals.length === 2 && plan.reviewLines.length === 0, "new tier: two goals, no review");
+}
+
+// 3b. A new tier in the middle -> before is the next existing tier's anchor.
+{
+  const { plan } = classifyGroups(
+    idMapOf("gear.a", "gear.b"),
+    [[member("a")], [member("mid-new")], [member("b")]],
+    [dataGroup("gear.a"), dataGroup("gear.b")]
+  );
+  assert(plan.newTiers.length === 1 && plan.newTiers[0].before === "gear.b",
+    "new tier in middle: before is the following tier's anchor");
+}
+
+// 4. A new group while another group went missing -> review (possible restructure).
+{
+  const { plan } = classifyGroups(
+    idMapOf("gear.a", "gear.gone"),
+    [[member("a")], [member("z-new")]],
+    [dataGroup("gear.a"), dataGroup("gear.gone")]
+  );
+  assert(plan.newTiers.length === 0 && plan.goals.length === 0, "ambiguous new group: not auto-added");
+  assert(plan.reviewLines.length >= 1, "ambiguous new group: flagged for review");
+}
+
+// 5. Level-requirement type: "69-slayer" is a skill, plain gear is "other".
+{
+  const { plan } = classifyGroups(
+    idMapOf("gear.a"),
+    [[member("a"), member("70-ranged")]],
+    [dataGroup("gear.a")]
+  );
+  const g = plan.goals.find(x => x.id === "gear.70-ranged");
+  assert(g && g.type === "skill", "type: level requirement is skill");
+}
+
+// 6. applyNewGoals writes valid data.js: append to a tier + add a new tier.
+{
+  const tmp = path.join(os.tmpdir(), "data-crawltest-" + Date.now() + ".js");
+  fs.copyFileSync(path.join(__dirname, "data.js"), tmp);
+  const plan = {
+    goals: [
+      { id: "gear.test-widget", title: "Test widget", type: "other", icon: "Test_widget.png", link: "https://oldschool.runescape.wiki/w/Test_widget" },
+      { id: "gear.test-solo", title: "Test solo", type: "other", icon: "Test_solo.png", link: "https://oldschool.runescape.wiki/w/Test_solo" },
+      { id: "gear.test-mid", title: "Test mid", type: "other", icon: "Test_mid.png", link: "https://oldschool.runescape.wiki/w/Test_mid" }
+    ],
+    tierAppends: [{ anchor: "gear.amulet-of-strength", ids: ["gear.test-widget"] }],
+    // one appended at the end, one inserted before an existing tier's anchor
+    newTiers: [
+      { ids: ["gear.test-solo"], before: null },
+      { ids: ["gear.test-mid"], before: "gear.dragon-scimitar" }
+    ],
+    reviewLines: []
+  };
+  const added = applyNewGoals(plan, tmp);
+  assert(added === 3, "applyNewGoals: reported 3 goals added");
+
+  const out = fs.readFileSync(tmp, "utf8");
+  let data = null;
+  try { data = new Function(out + "\nreturn { GOAL_DATA, GEAR_GROUPS };")(); }
+  catch (e) { console.error("parse error: " + e.message); }
+  assert(!!data, "applyNewGoals: result is valid, loadable JS");
+  if (data) {
+    const ids = new Set(data.GOAL_DATA.map(n => n.id));
+    assert(ids.has("gear.test-widget") && ids.has("gear.test-solo") && ids.has("gear.test-mid"),
+      "applyNewGoals: goals present in GOAL_DATA");
+    const tier = data.GEAR_GROUPS.find(t => t.includes("gear.amulet-of-strength"));
+    assert(tier && tier.includes("gear.test-widget"), "applyNewGoals: appended id to the existing tier");
+    assert(data.GEAR_GROUPS.some(t => t.length === 1 && t[0] === "gear.test-solo"), "applyNewGoals: appended new tier present");
+    // positional: gear.test-mid inserted immediately before the dragon-scimitar tier
+    const midIdx = data.GEAR_GROUPS.findIndex(t => t.length === 1 && t[0] === "gear.test-mid");
+    const scimIdx = data.GEAR_GROUPS.findIndex(t => t.includes("gear.dragon-scimitar"));
+    assert(midIdx >= 0 && midIdx === scimIdx - 1, "applyNewGoals: new tier inserted at its live position");
+    const w = data.GOAL_DATA.find(n => n.id === "gear.test-widget");
+    assert(w && w.icon === "Test_widget.png" && Array.isArray(w.children) && w.children.length === 0,
+      "applyNewGoals: goal fields intact");
+  }
+  fs.rmSync(tmp, { force: true });
+}
+
+if (failed) { console.error(`\n${failed} test(s) failed.`); process.exitCode = 1; }
+else { console.log(`\n${passed} test(s) passed.\nAll crawl tests passed.`); }

@@ -51,7 +51,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          git add templates.js templates/ladlor.json
+          # data.js is included: the crawl auto-wires purely-additive new goals.
+          git add data.js templates.js templates/ladlor.json
           git commit -m "Bump Ladlord template to v${NEW_VERSION} from live crawl"
           # First run creates the branch; a rerun overwrites this bot-owned branch
           # (the CI clone is shallow and has no lease baseline, so force-with-lease

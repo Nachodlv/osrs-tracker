@@ -187,19 +187,41 @@ function canonToId(nodes, map) {
 
 // Render ladlorchart.com and return its tier columns as arrays of members. Each
 // milestone is a `.node` whose `id` attribute is the bare slug (e.g. "69-slayer"
-// or "climbing-boots") and whose `title` is the human label; reading the id
-// covers level-requirement nodes too (they have no <img>, only a number span).
+// or "climbing-boots"); reading the id covers level-requirement nodes too (they
+// have no <img>, only a number span). `data-wiki-url` and the child <img> give
+// the link and icon, so a member carries everything a flat data.js goal needs.
 async function fetchLiveGroups() {
   const expression = `(() => Array.from(document.querySelectorAll('.node-group'))
     .map(g => Array.from(g.querySelectorAll('.node'))
       .filter(n => n.id)
-      .map(n => ({ id: n.id, title: (n.getAttribute('title') || n.id) })))
+      .map(n => ({
+        id: n.id,
+        title: (n.getAttribute('title') || n.id),
+        wiki: (n.getAttribute('data-wiki-url') || ''),
+        icon: ((n.querySelector('img') || {}).src || '')
+      })))
     .filter(g => g.length))()`;
   const groups = await renderAndEval("https://ladlorchart.com/", expression);
   if (!Array.isArray(groups) || !groups.length) {
     throw new Error("rendered page exposed no .node-group columns");
   }
   return groups;
+}
+
+// A classified live member ({ slug, title, wiki, icon, canon }) mapped to what a
+// data.js goal needs. type mirrors data.js: skill-level requirements
+// ("69-slayer") are "skill", the rest of the tier gear is "other". icon is the
+// wiki image filename (data.js stores just the basename), link is the full wiki
+// url.
+function goalFromMember(m) {
+  const slug = m.slug;
+  return {
+    id: "gear." + slug,
+    title: m.title,
+    type: /^\d+-/.test(slug) ? "skill" : "other",
+    icon: m.icon ? decodeURIComponent(m.icon.split("/").pop()) : "",
+    link: m.wiki
+  };
 }
 
 // Greedily pair each live group with the data.js group it shares the most
@@ -229,13 +251,20 @@ function pairGroups(liveGroups, dataGroups) {
 async function groups(emit) {
   const res = await computeGroupDrift();
   if (!res) return null;
-  const { idMap, liveGroups, dataGroups, driftLines } = res;
+  const { idMap, liveGroups, dataGroups, driftLines, plan } = res;
   console.log(`Rendered ${liveGroups.length} tier groups from ladlorchart.com; ` +
     `GEAR_GROUPS has ${dataGroups.length}.`);
   if (driftLines.length) {
     console.log("\nGroup drift vs data.js GEAR_GROUPS:\n" + driftLines.join("\n"));
   } else {
     console.log("\nNo group drift. GEAR_GROUPS matches the live chart.");
+  }
+  if (plan.goals.length) {
+    console.log(`\nWould auto-add ${plan.goals.length} new goal(s) (--ci writes these to data.js):`);
+    plan.goals.forEach(g => console.log(`  ${g.id}  (${g.title}, ${g.type})`));
+  }
+  if (plan.reviewLines.length) {
+    console.log("\nNeeds manual review (not auto-added):\n  " + plan.reviewLines.join("\n  "));
   }
   if (emit) {
     const block = liveGroups.map(g =>
@@ -250,10 +279,17 @@ async function groups(emit) {
 }
 
 // Render the live chart and compute tier-group drift vs GEAR_GROUPS. Returns
-// { idMap, liveGroups, dataGroups, driftLines } or null if the render failed, so
-// callers (the CLI and --ci) can degrade gracefully. driftLines is a
-// human-readable list of members added/removed and groups that appeared or
-// disappeared, robust to reordering (groups are paired by member overlap).
+// { idMap, liveGroups, dataGroups, driftLines, plan } or null if the render
+// failed, so callers (the CLI and --ci) can degrade gracefully. driftLines is a
+// human-readable diff; plan splits the new members into ones safe to auto-wire
+// and ones a human must review.
+//
+// Safety (renames must never be auto-added, or a saved profile silently loses
+// that goal for lack of an ID_MIGRATIONS entry): a new member is only auto-added
+// when it is purely additive, i.e. it joins an existing tier that lost no member,
+// or forms a brand-new tier while nothing disappeared anywhere on the page. A new
+// member sharing a tier with a removed id, or appearing while some group went
+// missing, is treated as a possible rename/restructure and left for review.
 async function computeGroupDrift() {
   const { GOAL_DATA, GEAR_GROUPS } = loadDataJs();
   const idMap = canonToId(GOAL_DATA, new Map());
@@ -264,29 +300,136 @@ async function computeGroupDrift() {
     console.error("group render failed: " + e.message);
     return null;
   }
-  const liveGroups = raw.map(g => g.map(m => ({ title: m.title, canon: canonId(m.id) })));
+  const liveGroups = raw.map(g => g.map(m => ({
+    slug: m.id, title: m.title, wiki: m.wiki, icon: m.icon, canon: canonId(m.id)
+  })));
   const dataGroups = (GEAR_GROUPS || []).map(ids => ({ ids, canon: ids.map(canonId) }));
+  const { driftLines, plan } = classifyGroups(idMap, liveGroups, dataGroups);
+  return { idMap, liveGroups, dataGroups, driftLines, plan };
+}
 
+// Pure classification (no browser/network): given the idMap and the live/data
+// tier groups, produce a human-readable driftLines diff and a plan splitting new
+// members into auto-add vs review. Exported for tests.
+function classifyGroups(idMap, liveGroups, dataGroups) {
   const { pairs, orphanData } = pairGroups(liveGroups, dataGroups);
+  const known = m => idMap.has(m.canon);
   const label = m => idMap.get(m.canon) || `${m.title} (new)`;
+  const anyGone = orphanData.length > 0 ||
+    pairs.some(({ live, data }) => data &&
+      data.canon.some(c => !new Set(live.map(x => x.canon)).has(c)));
+
+  // For a new tier, remember the next existing tier in live order (its first id)
+  // so applyNewGoals can insert the new tier at its live position instead of at
+  // the end; null means nothing existing follows, so append.
+  const nextExistingAnchor = [];
+  let follow = null;
+  for (let i = pairs.length - 1; i >= 0; i--) {
+    nextExistingAnchor[i] = follow;
+    if (pairs[i].data) follow = pairs[i].data.ids[0];
+  }
+
   const driftLines = [];
-  pairs.forEach(({ live, data }) => {
+  const plan = { goals: [], tierAppends: [], newTiers: [], reviewLines: [] };
+  pairs.forEach(({ live, data }, i) => {
     if (!data) {
       driftLines.push(`  + new group on page: [${live.map(label).join(", ")}]`);
+      const unknown = live.filter(m => !known(m));
+      // A wholly-new tier is only safe to auto-add when it is all-new members and
+      // nothing went missing elsewhere (else it may be a moved/renamed group).
+      if (!anyGone && unknown.length === live.length && unknown.every(m => m.wiki && m.icon)) {
+        unknown.forEach(m => plan.goals.push(goalFromMember(m)));
+        plan.newTiers.push({ ids: unknown.map(m => "gear." + m.slug), before: nextExistingAnchor[i] });
+      } else {
+        plan.reviewLines.push(`new group [${live.map(label).join(", ")}] (needs review: possible move/rename or partly known)`);
+      }
       return;
     }
     const liveSet = new Set(live.map(m => m.canon));
-    const dataSet = new Set(data.canon);
-    const added = live.filter(m => !dataSet.has(m.canon));
     const removed = data.ids.filter((_, i) => !liveSet.has(data.canon[i]));
-    if (added.length || removed.length) {
+    const newcomers = live.filter(m => !known(m));
+    if (newcomers.length || removed.length) {
       driftLines.push(`  ~ group [${data.ids.join(", ")}]`);
-      added.forEach(m => driftLines.push(`      + ${label(m)}`));
+      newcomers.forEach(m => driftLines.push(`      + ${label(m)}`));
       removed.forEach(id => driftLines.push(`      - ${id}`));
     }
+    if (newcomers.length && !removed.length && newcomers.every(m => m.wiki && m.icon)) {
+      newcomers.forEach(m => plan.goals.push(goalFromMember(m)));
+      plan.tierAppends.push({ anchor: data.ids[0], ids: newcomers.map(m => "gear." + m.slug) });
+    } else if (newcomers.length) {
+      plan.reviewLines.push(`tier [${data.ids.join(", ")}]: new ${newcomers.map(m => m.title).join(", ")}` +
+        (removed.length ? ` alongside removed ${removed.join(", ")} (possible rename)` : " (incomplete data)"));
+    }
+    if (removed.length && !newcomers.length) {
+      plan.reviewLines.push(`tier [${data.ids.join(", ")}]: removed ${removed.join(", ")} (gone from page)`);
+    }
   });
-  orphanData.forEach(d => driftLines.push(`  - group gone from page: [${d.ids.join(", ")}]`));
-  return { idMap, liveGroups, dataGroups, driftLines };
+  orphanData.forEach(d => {
+    driftLines.push(`  - group gone from page: [${d.ids.join(", ")}]`);
+    plan.reviewLines.push(`group gone from page: [${d.ids.join(", ")}]`);
+  });
+  return { driftLines, plan };
+}
+
+// A single flat gear goal, formatted like the existing one-line gear.* entries
+// at the tail of GOAL_DATA in data.js.
+function goalEntryLine(g) {
+  const esc = s => String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `  { id: "${esc(g.id)}", title: "${esc(g.title)}", type: "${esc(g.type)}", ` +
+    `icon: "${esc(g.icon)}", link: "${esc(g.link)}", children: [] }`;
+}
+
+function escapeReg(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+// Write an auto-add plan into data.js by targeted text insertion: append the new
+// goal objects to the tail of GOAL_DATA, add each new member id to its existing
+// tier (matched by the tier's first id), and append any brand-new tiers. The
+// GEAR_GROUPS block is edited in isolation so a tier-anchor id can never collide
+// with the same id used elsewhere in the file. Returns the number of goals
+// added. Idempotent enough for CI: a rerun with the goals already present is a
+// no-op only if the plan is empty, so callers pass a freshly computed plan.
+function applyNewGoals(plan, dataPath = path.join(ROOT, "data.js")) {
+  if (!plan.goals.length && !plan.tierAppends.length && !plan.newTiers.length) return 0;
+  let src = fs.readFileSync(dataPath, "utf8");
+
+  const seen = new Set();
+  const goals = plan.goals.filter(g => (seen.has(g.id) ? false : (seen.add(g.id), true)));
+
+  // 1. GOAL_DATA entries, before its closing "];". A trailing comma before the
+  //    bracket is valid JS, so we need not touch the previous last entry.
+  const gStart = src.indexOf("var GOAL_DATA");
+  const gEnd = src.indexOf("\n];", gStart);
+  if (gStart < 0 || gEnd < 0) throw new Error("could not locate GOAL_DATA bounds in data.js");
+  if (goals.length) {
+    src = src.slice(0, gEnd) + ",\n" + goals.map(goalEntryLine).join(",\n") + src.slice(gEnd);
+  }
+
+  // 2 + 3. GEAR_GROUPS edits, isolated to its own array literal.
+  const grpStart = src.indexOf("var GEAR_GROUPS");
+  const grpEnd = src.indexOf("\n];", grpStart);
+  if (grpStart < 0 || grpEnd < 0) throw new Error("could not locate GEAR_GROUPS bounds in data.js");
+  let block = src.slice(grpStart, grpEnd);
+  plan.tierAppends.forEach(({ anchor, ids }) => {
+    const add = ids.map(id => `, "${id}"`).join("");
+    const re = new RegExp(`(\\[[^\\[\\]\\n]*"${escapeReg(anchor)}"[^\\[\\]\\n]*)\\]`);
+    if (!re.test(block)) throw new Error(`could not find tier for anchor ${anchor} in GEAR_GROUPS`);
+    block = block.replace(re, `$1${add}]`);
+  });
+  // New tiers: insert each before its live-position anchor tier (processed in
+  // live order so runs of new tiers keep their order); those with no following
+  // existing tier (before === null) are appended after the last tier.
+  const tierLine = ids => "  [" + ids.map(id => `"${id}"`).join(", ") + "]";
+  let tail = "";
+  plan.newTiers.forEach(({ ids, before }) => {
+    if (!before) { tail += ",\n" + tierLine(ids); return; }
+    const re = new RegExp(`(\\n)(\\s*\\[[^\\[\\]\\n]*"${escapeReg(before)}"[^\\[\\]\\n]*\\])`);
+    if (!re.test(block)) throw new Error(`could not find tier for anchor ${before} in GEAR_GROUPS`);
+    block = block.replace(re, `$1${tierLine(ids)},$2`);
+  });
+  src = src.slice(0, grpStart) + block + tail + src.slice(grpEnd);
+
+  fs.writeFileSync(dataPath, src);
+  return goals.length;
 }
 
 // Append key=value to $GITHUB_OUTPUT so the workflow can branch on the result.
@@ -295,14 +438,16 @@ function setOutput(key, value) {
   if (f) fs.appendFileSync(f, `${key}=${value}\n`);
 }
 
-// CI mode: regenerate the JSON, crawl the live chart, and if it has drifted
-// (new goal ids and/or reshuffled tier groups) bump the template version so the
-// update banner fires. Writes a human-readable drift report to $DRIFT_REPORT (or
-// drift-report.md) for the PR body, and emits `changed`/`newVersion` GitHub
-// outputs. It never edits data.js (parents/icons/links and group membership need
-// a human); the PR it produces bumps the version + regenerated JSON and lists
-// what to wire in. Group drift is best-effort: it renders the SPA via a local
-// Chrome, and if that is unavailable the run falls back to id drift only.
+// CI mode: regenerate the JSON, crawl the live chart, and if it has drifted bump
+// the template version so the update banner fires. Purely additive tier-group
+// changes (new gear in a tier, or a whole new all-new tier) are auto-wired into
+// data.js with icons/links from the rendered chart; renames, removals, and
+// ambiguous regroupings are never auto-applied (a wrong rename would skip an
+// ID_MIGRATIONS entry and lose saved progress) and are listed for review, as are
+// new ids that are not in a tier group. Writes a drift report to $DRIFT_REPORT
+// (or drift-report.md) for the PR body and emits `changed`/`newVersion` GitHub
+// outputs. Group handling is best-effort: it renders the SPA via a local Chrome,
+// and if that is unavailable the run falls back to id drift only.
 async function ci() {
   const { GOAL_DATA } = generate();
   const result = await check(GOAL_DATA);
@@ -311,22 +456,32 @@ async function ci() {
     process.exitCode = 1; // live fetch failed; surface it in the workflow.
     return;
   }
-  const idDrift = result.onlyLive;
   const groupRes = await computeGroupDrift(); // best-effort; null if render failed
-  const groupDrift = groupRes ? groupRes.driftLines : [];
   if (!groupRes) {
     console.error("group drift check skipped (render failed); proceeding with id drift only.");
   }
+  const plan = groupRes ? groupRes.plan : { goals: [], tierAppends: [], newTiers: [], reviewLines: [] };
+  const groupDrift = groupRes ? groupRes.driftLines : [];
+
+  // Grouped nodes are handled below (auto-add or review); keep only the other new
+  // ids the bundle exposes so they are not reported twice.
+  const groupedCanon = new Set();
+  if (groupRes) groupRes.liveGroups.forEach(g => g.forEach(m => groupedCanon.add(m.canon)));
+  const idDriftOther = result.onlyLive.filter(g => !groupedCanon.has(canonId(g.id)));
 
   const reportPath = process.env.DRIFT_REPORT || path.join(ROOT, "drift-report.md");
-  if (!idDrift.length && !groupDrift.length) {
+  if (!idDriftOther.length && !groupDrift.length) {
     // No real change: discard the timestamp-only churn in the regenerated JSON.
     setOutput("changed", "false");
     console.log("\nNo template drift. Nothing to update.");
     return;
   }
+
+  // Wire the safe, purely-additive goals into data.js before regenerating.
+  const added = groupRes ? applyNewGoals(plan) : 0;
+
   const newVersion = bumpLadlorVersion();
-  // Re-emit the JSON so its embedded version matches the bumped templates.js.
+  // Re-emit the JSON so it reflects the added goals and matches templates.js.
   generate();
   const lines = [
     "The Ladlord chart crawl found drift between the live site and `data.js`,",
@@ -336,39 +491,62 @@ async function ci() {
     "older version will see the update banner).",
     ""
   ];
-  if (idDrift.length) {
+  if (added) {
     lines.push(
-      `### ${idDrift.length} id(s) on the live chart but not in data.js`,
+      `### Auto-added ${added} new goal(s) to \`data.js\``,
       "",
-      ...idDrift.map(g => `- \`${g.id}\`: ${g.title}`),
+      ...plan.goals.map(g => `- \`${g.id}\`: ${g.title} (${g.type})`),
+      "",
+      "Purely additive, so the crawl wired them in with icons/links from the live",
+      "chart and regenerated the template. Review the placement before merging.",
       ""
     );
   }
-  if (groupDrift.length) {
+  if (plan.reviewLines.length) {
     lines.push(
-      "### Tier-group drift vs `GEAR_GROUPS`",
+      "### Needs manual review",
+      "",
+      "Renames, removals, and ambiguous regroupings are not auto-applied (a wrong",
+      "rename would skip an `ID_MIGRATIONS` entry and lose saved progress):",
       "",
       "```",
-      ...groupDrift,
+      ...plan.reviewLines,
       "```",
+      ""
+    );
+  }
+  if (idDriftOther.length) {
+    lines.push(
+      `### ${idDriftOther.length} other new id(s) on the live chart`,
+      "",
+      ...idDriftOther.map(g => `- \`${g.id}\`: ${g.title}`),
+      "",
+      "Not in a tier group, so wire these into `data.js` by hand.",
       ""
     );
   }
   lines.push(
-    "Wire these into `data.js` with the correct parents / icons / links and",
-    "`GEAR_GROUPS` tiers, then rerun `node tools/crawl-ladlor.js` to regenerate",
+    "After any manual edits, rerun `node tools/crawl-ladlor.js` to regenerate",
     "`templates/ladlor.json`.",
     ""
   );
   fs.writeFileSync(reportPath, lines.join("\n"));
   setOutput("changed", "true");
   setOutput("newVersion", String(newVersion));
-  console.log(`\nBumped ladlor template version to ${newVersion}; wrote ${path.relative(ROOT, reportPath)}.`);
+  console.log(`\nBumped ladlor template version to ${newVersion}` +
+    (added ? `, auto-added ${added} goal(s)` : "") +
+    `; wrote ${path.relative(ROOT, reportPath)}.`);
 }
 
-(async function main() {
-  if (process.argv.includes("--ci")) return ci();
-  if (process.argv.includes("--groups")) return void await groups(process.argv.includes("--emit"));
-  const { GOAL_DATA } = generate();
-  if (process.argv.includes("--check")) await check(GOAL_DATA);
-})();
+// Exported for tests (test-crawl.js). The pure pieces, plan classification via
+// classifyGroups and the data.js writer applyNewGoals, run without a browser.
+module.exports = { classifyGroups, applyNewGoals, goalFromMember, canonId, pairGroups };
+
+if (require.main === module) {
+  (async function main() {
+    if (process.argv.includes("--ci")) return ci();
+    if (process.argv.includes("--groups")) return void await groups(process.argv.includes("--emit"));
+    const { GOAL_DATA } = generate();
+    if (process.argv.includes("--check")) await check(GOAL_DATA);
+  })();
+}

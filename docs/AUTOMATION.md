@@ -5,9 +5,12 @@ dependency-free (checkout + Node, no bundler), matching the app itself.
 
 ## `test.yml` , run the test suites
 
-Runs `node test-migration.js` and `node test-app.js` on every push to `master`
-and on every pull request. Both runners set `process.exitCode = 1` on failure,
-so a broken suite fails the check. This is the CI mirror of the local Stop hook.
+Runs `node test-migration.js`, `node test-app.js`, and `node test-crawl.js` on
+every push to `master` and on every pull request. Each runner sets
+`process.exitCode = 1` on failure, so a broken suite fails the check. This is the
+CI mirror of the local Stop hook. `test-crawl.js` covers the crawl tool's pure
+logic (group classification and the `data.js` writer); the browser render path
+is not covered.
 
 ## `crawl-ladlor.yml` , detect Ladlord chart drift
 
@@ -18,19 +21,33 @@ Weekly (Mondays 06:00 UTC) and on-demand (`workflow_dispatch`). It runs
 2. Crawls ladlorchart.com and diffs the live goal ids against `data.js`.
 3. Renders the live SPA and diffs its tier-group layout against `GEAR_GROUPS`
    (see "Group drift" below).
-4. If either the goal ids or the tier groups drifted, bumps the built-in Ladlord
-   template `version` in `templates.js` (so pinned profiles get the update
-   banner) and writes a drift report with a section per kind of drift.
+4. Auto-wires purely-additive new goals into `data.js` (see "Auto-wiring" below).
+5. If anything drifted, bumps the built-in Ladlord template `version` in
+   `templates.js` (so pinned profiles get the update banner) and writes a drift
+   report with a section per kind of drift.
 
-When drift is found the workflow commits the version bump + regenerated JSON to
-a `chore/ladlor-crawl-v<N>` branch and tries to open a PR. Because this repo
-disables "Allow GitHub Actions to create and approve pull requests", the default
-token cannot open a PR, so it **falls back to opening an issue** labelled
-`template-drift` (auto-created if missing) with the drift report and a compare
-link. Reruns reuse the open issue/branch instead of piling up duplicates.
+When drift is found the workflow commits the version bump + regenerated JSON (and
+any auto-wired `data.js` change) to a `chore/ladlor-crawl-v<N>` branch and tries
+to open a PR. Because this repo disables "Allow GitHub Actions to create and
+approve pull requests", the default token cannot open a PR, so it **falls back to
+opening an issue** labelled `template-drift` (auto-created if missing) with the
+drift report and a compare link. Reruns reuse the open issue/branch instead of
+piling up duplicates.
 
-The crawler never edits `data.js` (parents/icons/links and group membership are
-a human/Claude judgement call); it only flags drift for a maintainer to wire in.
+### Auto-wiring new goals
+
+For a **purely additive** change, a new gear item joining an existing tier, or a
+whole new tier of all-new items while nothing disappeared, the crawl writes the
+flat goal into `data.js` (id `gear.<slug>`, with title/icon/link/type read from
+the rendered node) and slots it into `GEAR_GROUPS`, then regenerates the
+template. The PR therefore arrives with the easy cases already wired in.
+
+It never auto-applies **renames, removals, or ambiguous regroupings**: a
+misjudged rename would add a fresh id without an `ID_MIGRATIONS` entry and
+silently orphan saved progress. Those, plus any new id that is not in a tier
+group, are listed in the drift report under "Needs manual review" for a
+maintainer (or the `@claude` workflow) to wire in with a migration. So the crawl
+still never touches parent/child structure or migrations on its own.
 
 ### Group drift (`--groups`)
 
@@ -38,7 +55,9 @@ The tier columns (`.node-group`) only exist in the rendered DOM, so id-level
 crawling of the bundle cannot see them. `--groups` renders the live SPA and
 diffs its groups against `GEAR_GROUPS`, reporting members added/removed and whole
 groups that appeared or disappeared (robust to reordering, groups are paired by
-member overlap). This runs as step 3 of `--ci`, and can also be run locally:
+member overlap). It also previews the auto-wiring plan (which new goals `--ci`
+would write, and which are held for review) without touching any file. This runs
+as steps 3-4 of `--ci`, and can also be run locally:
 
 ```
 node tools/crawl-ladlor.js --groups          # print the group diff
