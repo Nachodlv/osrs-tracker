@@ -76,6 +76,8 @@ jobs:
             echo
             echo "Open the PR manually: ${COMPARE}"
             echo
+            echo "Or comment \`@claude wire these new goals into data.js\` on this issue to have Claude add them (with icons/links) and open a draft PR."
+            echo
             cat "$DRIFT_REPORT"
           } > "${DRIFT_REPORT}.issue"
 
