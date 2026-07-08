@@ -3048,15 +3048,25 @@ function ignoreTemplateUpdate(profileId) {
   renderTemplateBanner();
 }
 
-// Adopt the current template content: re-pin the base snapshot and version, then
-// re-render. The profile's own edits (progress, removals, custom nodes) are kept.
-// Fold the (now-current) template's GEAR_GROUPS into the profile's groupsState.
+// id -> a signature of the group it belongs to in `gearGroups` (its sorted
+// members), or undefined when the id is ungrouped. Used to tell whether a
+// template update changed a goal's grouping.
+function groupSigMap(gearGroups) {
+  const m = {};
+  (gearGroups || []).forEach(g => {
+    const sig = g.slice().sort().join("|");
+    g.forEach(id => { m[id] = sig; });
+  });
+  return m;
+}
+
+// Fold the current template's GEAR_GROUPS into the profile's groupsState.
 // ensureGroupsState only seeds once, so without this a template's new groups
 // would never appear after an update. Existing groups and the user's own group
 // edits are left untouched; a template group is added only when it is genuinely
 // new (its member set is not already a group, and none of its members are
 // already placed in another group).
-function mergeTemplateGroups() {
+function addNewTemplateGroups() {
   ensureGroupsState();
   const gs = state.groupsState;
   const existingSigs = new Set(gs.groupOrder.map(gid => (gs.groups[gid] || []).slice().sort().join("|")));
@@ -3076,18 +3086,37 @@ function mergeTemplateGroups() {
   });
 }
 
+// Bring the profile's groupsState in line with a template group change on an
+// update. Only goals whose grouping the template actually changed (old signature
+// != new) are touched: they are detached from their current save group
+// (dissolving a group left with one member), then re-grouped from the new
+// template. Goals the template left alone keep the user's own group edits.
+function reconcileGroupsFromTemplate(oldGears, newGears) {
+  ensureGroupsState();
+  const oldMap = groupSigMap(oldGears);
+  const newMap = groupSigMap(newGears);
+  const ids = new Set(Object.keys(oldMap).concat(Object.keys(newMap)));
+  ids.forEach(id => {
+    if (!currentNodes[id]) return;
+    if (oldMap[id] === newMap[id]) return; // template did not change this grouping
+    removeFromGroup(id); // detach; a group re-formed by the template is re-added below
+  });
+  addNewTemplateGroups();
+}
+
 function applyTemplateUpdate(profileId) {
   const p = profilesMeta.profiles[profileId];
   const t = Templates.getTemplate(p && p.templateId);
   if (!p || !t) return;
+  const oldBase = loadTemplateBase(profileId) || { goalData: [], gearGroups: [] };
   saveTemplateBase(profileId, t);
   p.templateVersion = t.version || 1;
   delete p.dismissedVersion;
   saveProfilesMeta();
   if (profileId === profilesMeta.activeId) {
     applyProfileTemplate(profileId);
-    render();             // rebuild currentNodes from the new template content
-    mergeTemplateGroups(); // then adopt any groups the template added
+    render();  // rebuild currentNodes from the new template content
+    reconcileGroupsFromTemplate(oldBase.gearGroups, t.gearGroups);
     saveState();
     render();
   } else {
@@ -3212,8 +3241,8 @@ function changeProfileTemplate(profileId, templateId, mode) {
   delete p.dismissedVersion;
   saveProfilesMeta();
   applyProfileTemplate(profileId);
-  render();              // rebuild currentNodes from the new base content
-  mergeTemplateGroups(); // then adopt any groups the template added
+  render();               // rebuild currentNodes from the new base content
+  addNewTemplateGroups(); // then adopt any groups the template added
   saveState();
   render();
   refreshProfileSelect();

@@ -558,6 +558,49 @@ test("changeProfileTemplate replaces the base and re-pins to the selected templa
   assert.strictEqual(r.onlyNew, true, "replace swaps the base for the selected template's content");
 });
 
+test("updating to a template that dropped a group ungroups the goal in the save", () => {
+  const r = inCtx(`
+    const t = Templates.addUserTemplate({ name: "Grp", goalData: [
+      { id: "a", title: "A", type: "quest", children: [] },
+      { id: "b", title: "B", type: "quest", children: [] }
+    ], gearGroups: [["a", "b"]] });
+    createProfile("GrpP", t.id);
+    render(); // seeds groupsState from the template's group
+    const grouped = getGroupOf("a") !== null && getGroupOf("b") !== null;
+    // new template version drops the group entirely (both goals ungrouped)
+    Templates.updateUserTemplate(t.id, { name: "Grp", goalData: [
+      { id: "a", title: "A", type: "quest", children: [] },
+      { id: "b", title: "B", type: "quest", children: [] }
+    ], gearGroups: [] });
+    applyTemplateUpdate(profilesMeta.activeId);
+    return { grouped, aAfter: getGroupOf("a"), bAfter: getGroupOf("b") };
+  `);
+  assert.strictEqual(r.grouped, true, "the goals start grouped from the template");
+  assert.strictEqual(r.aAfter, null, "goal a is ungrouped after the update, matching the template");
+  assert.strictEqual(r.bAfter, null, "goal b is ungrouped after the update, matching the template");
+});
+
+test("a template update leaves groups it did not change untouched", () => {
+  const r = inCtx(`
+    const t = Templates.addUserTemplate({ name: "Keep", goalData: [
+      { id: "a", title: "A", type: "quest", children: [] },
+      { id: "b", title: "B", type: "quest", children: [] },
+      { id: "c", title: "C", type: "quest", children: [] }
+    ], gearGroups: [["a", "b"]] });
+    createProfile("KeepP", t.id);
+    render();
+    // update only adds goal c; the [a,b] group is unchanged
+    Templates.updateUserTemplate(t.id, { name: "Keep", goalData: [
+      { id: "a", title: "A", type: "quest", children: [] },
+      { id: "b", title: "B", type: "quest", children: [] },
+      { id: "c", title: "C", type: "quest", children: [] }
+    ], gearGroups: [["a", "b"]] });
+    applyTemplateUpdate(profilesMeta.activeId);
+    return { sameGroup: getGroupOf("a") !== null && getGroupOf("a") === getGroupOf("b") };
+  `);
+  assert.strictEqual(r.sameGroup, true, "the unchanged [a,b] group survives the update");
+});
+
 console.log("\n" + passed + " test(s) passed.");
 if (process.exitCode) console.error("Some app tests failed.");
 else console.log("All app tests passed.");
