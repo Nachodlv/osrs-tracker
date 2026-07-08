@@ -67,10 +67,18 @@ node tools/crawl-ladlor.js --groups --emit    # also print a paste-ready
 
 Rendering goes through Chrome over the DevTools Protocol using only Node
 built-ins (`tools/render-chrome.js`), so the tool stays dependency-free but needs
-a Chrome/Chromium present. The workflow points `CHROME_PATH` at the one
-preinstalled on `ubuntu-latest`; locally it auto-detects, and `CHROME_PATH`
-overrides. In `--ci` the group check is best-effort: if the render fails the run
-logs a warning and still reports id drift.
+a Chrome/Chromium present **and Node 22+** (it speaks CDP over the global
+`WebSocket`, which is undefined on Node 20). The workflow points `CHROME_PATH` at
+the Chrome preinstalled on `ubuntu-latest` and pins `node-version: 22`; locally
+it auto-detects Chrome, and `CHROME_PATH` overrides. In `--ci` the group check is
+best-effort: if the render fails the run logs a warning and still reports id
+drift, but that fallback is id-only and cannot tell a stale entry in the bundle's
+title dictionary (a goal the site removed) from a real new goal, so keep the
+render working.
+
+When the render succeeds, `--ci` cross-checks every title-dictionary id against
+the ids actually rendered on the page and silently ignores ones that render in no
+node (stale dictionary leftovers), instead of reporting them as drift.
 
 ## `claude.yml` , wire drifted goals in on demand
 

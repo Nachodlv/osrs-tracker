@@ -1,8 +1,8 @@
 {
   "name": "Ironman Ladlord Chart",
   "source": "https://ladlorchart.com",
-  "version": 1,
-  "generatedAt": "2026-07-07T09:43:03.312Z",
+  "version": 2,
+  "generatedAt": "2026-07-08T20:02:27.187Z",
   "goalData": [
     {
       "id": "mixed-hide-boots",
@@ -21,15 +21,15 @@
       "children": []
     },
     {
-      "id": "spirit-tree",
+      "id": "spirit-tree-construction",
       "title": "Spirit Tree (Construction)",
       "type": "other",
-      "icon": "Spirit_tree.png",
-      "link": "https://oldschool.runescape.wiki/w/Spirit_tree",
+      "icon": "Spirit_tree_(Construction)_icon.png",
+      "link": "https://oldschool.runescape.wiki/w/Spirit_tree_(Construction)",
       "children": []
     },
     {
-      "id": "hallowed-shard",
+      "id": "hallowed-crystal-shard",
       "title": "Hallowed Crystal Shard",
       "type": "other",
       "icon": "Hallowed_crystal_shard.png",
@@ -1127,10 +1127,10 @@
       "imbued-zamorak-cape"
     ],
     [
-      "spirit-tree"
+      "spirit-tree-construction"
     ],
     [
-      "hallowed-shard"
+      "hallowed-crystal-shard"
     ],
     [
       "gear.infinity-boots",

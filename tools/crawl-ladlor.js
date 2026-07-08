@@ -185,27 +185,33 @@ function canonToId(nodes, map) {
   return map;
 }
 
-// Render ladlorchart.com and return its tier columns as arrays of members. Each
-// milestone is a `.node` whose `id` attribute is the bare slug (e.g. "69-slayer"
-// or "climbing-boots"); reading the id covers level-requirement nodes too (they
-// have no <img>, only a number span). `data-wiki-url` and the child <img> give
-// the link and icon, so a member carries everything a flat data.js goal needs.
+// Render ladlorchart.com and return its tier columns as arrays of members plus
+// every rendered node id. Each milestone is a `.node` whose `id` attribute is
+// the bare slug (e.g. "69-slayer" or "climbing-boots"); reading the id covers
+// level-requirement nodes too (they have no <img>, only a number span).
+// `data-wiki-url` and the child <img> give the link and icon, so a member
+// carries everything a flat data.js goal needs. `rendered` is the id of every
+// `.node` on the page (not just those in a tier column), so a caller can tell a
+// real goal from a stale entry in the bundle's id->title dictionary.
 async function fetchLiveGroups() {
-  const expression = `(() => Array.from(document.querySelectorAll('.node-group'))
-    .map(g => Array.from(g.querySelectorAll('.node'))
-      .filter(n => n.id)
-      .map(n => ({
-        id: n.id,
-        title: (n.getAttribute('title') || n.id),
-        wiki: (n.getAttribute('data-wiki-url') || ''),
-        icon: ((n.querySelector('img') || {}).src || '')
-      })))
-    .filter(g => g.length))()`;
-  const groups = await renderAndEval("https://ladlorchart.com/", expression);
-  if (!Array.isArray(groups) || !groups.length) {
+  const expression = `(() => ({
+    groups: Array.from(document.querySelectorAll('.node-group'))
+      .map(g => Array.from(g.querySelectorAll('.node'))
+        .filter(n => n.id)
+        .map(n => ({
+          id: n.id,
+          title: (n.getAttribute('title') || n.id),
+          wiki: (n.getAttribute('data-wiki-url') || ''),
+          icon: ((n.querySelector('img') || {}).src || '')
+        })))
+      .filter(g => g.length),
+    rendered: Array.from(document.querySelectorAll('.node[id]')).map(n => n.id)
+  }))()`;
+  const res = await renderAndEval("https://ladlorchart.com/", expression);
+  if (!res || !Array.isArray(res.groups) || !res.groups.length) {
     throw new Error("rendered page exposed no .node-group columns");
   }
-  return groups;
+  return res;
 }
 
 // A classified live member ({ slug, title, wiki, icon, canon }) mapped to what a
@@ -279,10 +285,11 @@ async function groups(emit) {
 }
 
 // Render the live chart and compute tier-group drift vs GEAR_GROUPS. Returns
-// { idMap, liveGroups, dataGroups, driftLines, plan } or null if the render
-// failed, so callers (the CLI and --ci) can degrade gracefully. driftLines is a
-// human-readable diff; plan splits the new members into ones safe to auto-wire
-// and ones a human must review.
+// { idMap, liveGroups, dataGroups, driftLines, plan, renderedCanon } or null if
+// the render failed, so callers (the CLI and --ci) can degrade gracefully.
+// driftLines is a human-readable diff; plan splits the new members into ones safe
+// to auto-wire and ones a human must review; renderedCanon is the canonId of
+// every node actually on the page (used to drop stale title-dict ids).
 //
 // Safety (renames must never be auto-added, or a saved profile silently loses
 // that goal for lack of an ID_MIGRATIONS entry): a new member is only auto-added
@@ -300,12 +307,13 @@ async function computeGroupDrift() {
     console.error("group render failed: " + e.message);
     return null;
   }
-  const liveGroups = raw.map(g => g.map(m => ({
+  const liveGroups = raw.groups.map(g => g.map(m => ({
     slug: m.id, title: m.title, wiki: m.wiki, icon: m.icon, canon: canonId(m.id)
   })));
+  const renderedCanon = new Set((raw.rendered || []).map(canonId));
   const dataGroups = (GEAR_GROUPS || []).map(ids => ({ ids, canon: ids.map(canonId) }));
   const { driftLines, plan } = classifyGroups(idMap, liveGroups, dataGroups);
-  return { idMap, liveGroups, dataGroups, driftLines, plan };
+  return { idMap, liveGroups, dataGroups, driftLines, plan, renderedCanon };
 }
 
 // Pure classification (no browser/network): given the idMap and the live/data
@@ -369,6 +377,22 @@ function classifyGroups(idMap, liveGroups, dataGroups) {
     plan.reviewLines.push(`group gone from page: [${d.ids.join(", ")}]`);
   });
   return { driftLines, plan };
+}
+
+// The live JS bundle keeps an id->title dictionary that still lists goals the
+// site has since removed (retired gear, cut challenges), so an id can be "on the
+// live chart" per that map yet render in no node. Given the rendered DOM, split
+// the title-map ids missing from data.js into ones actually on the page (real
+// drift to wire in) and stale dictionary leftovers to ignore. groupedCanon and
+// renderedCanon are canonId sets from the render (groupedCanon is a subset of
+// renderedCanon, so grouped ids are dropped here and handled by the group logic).
+// Exported for tests.
+function splitStaleIds(onlyLive, groupedCanon, renderedCanon) {
+  const ungrouped = onlyLive.filter(g => !groupedCanon.has(canonId(g.id)));
+  return {
+    fresh: ungrouped.filter(g => renderedCanon.has(canonId(g.id))),
+    stale: ungrouped.filter(g => !renderedCanon.has(canonId(g.id)))
+  };
 }
 
 // A single flat gear goal, formatted like the existing one-line gear.* entries
@@ -467,7 +491,20 @@ async function ci() {
   // ids the bundle exposes so they are not reported twice.
   const groupedCanon = new Set();
   if (groupRes) groupRes.liveGroups.forEach(g => g.forEach(m => groupedCanon.add(m.canon)));
-  const idDriftOther = result.onlyLive.filter(g => !groupedCanon.has(canonId(g.id)));
+  // When the render succeeded, drop title-dict ids that render in no node on the
+  // page: they are stale dictionary leftovers for removed goals, not real drift.
+  // If the render failed we cannot verify, so report every ungrouped new id.
+  let idDriftOther;
+  if (groupRes) {
+    const { fresh, stale } = splitStaleIds(result.onlyLive, groupedCanon, groupRes.renderedCanon);
+    idDriftOther = fresh;
+    if (stale.length) {
+      console.log(`\nIgnored ${stale.length} stale title-dict id(s) not rendered on the live page:`);
+      stale.forEach(g => console.log(`  - ${g.id} (${g.title})`));
+    }
+  } else {
+    idDriftOther = result.onlyLive.filter(g => !groupedCanon.has(canonId(g.id)));
+  }
 
   const reportPath = process.env.DRIFT_REPORT || path.join(ROOT, "drift-report.md");
   if (!idDriftOther.length && !groupDrift.length) {
@@ -540,7 +577,7 @@ async function ci() {
 
 // Exported for tests (test-crawl.js). The pure pieces, plan classification via
 // classifyGroups and the data.js writer applyNewGoals, run without a browser.
-module.exports = { classifyGroups, applyNewGoals, goalFromMember, canonId, pairGroups };
+module.exports = { classifyGroups, applyNewGoals, goalFromMember, canonId, pairGroups, splitStaleIds };
 
 if (require.main === module) {
   (async function main() {

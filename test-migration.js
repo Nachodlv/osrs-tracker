@@ -23,14 +23,22 @@ console.log("Migration table sanity");
 test("has a non-trivial number of entries", () => {
   assert.ok(Object.keys(ID_MIGRATIONS).length > 100, "expected 100+ migration entries");
 });
-test("every value is a flat gear.* id with no dots beyond the prefix", () => {
-  Object.values(ID_MIGRATIONS).forEach(newId => {
-    assert.ok(newId.startsWith("gear."), `${newId} should start with "gear."`);
+test("gear-progression.* entries flatten to a gear.* id", () => {
+  Object.entries(ID_MIGRATIONS).forEach(([oldId, newId]) => {
+    if (oldId.startsWith("gear-progression.")) {
+      assert.ok(newId.startsWith("gear."), `${newId} should start with "gear."`);
+    }
   });
 });
 test("no migration maps to itself", () => {
   Object.entries(ID_MIGRATIONS).forEach(([oldId, newId]) => {
     assert.notStrictEqual(oldId, newId, `${oldId} maps to itself`);
+  });
+});
+test("no migration target is itself a migration source (single-pass safe)", () => {
+  const sources = new Set(Object.keys(ID_MIGRATIONS));
+  Object.values(ID_MIGRATIONS).forEach(newId => {
+    assert.ok(!sources.has(newId), `${newId} is both a target and a source (needs chaining)`);
   });
 });
 
@@ -154,6 +162,31 @@ test("remaps rootGoals keys", () => {
   save.rootGoals = { "gear-progression.tier5.piety": true, "herb-run.weiss.arm": true };
   const migrated = migrateStateData(save);
   assert.deepStrictEqual(migrated.rootGoals, { "gear.piety": true, "herb-run.weiss.arm": true });
+});
+
+test("remaps the Ladlord spirit-tree / hallowed-shard rename, sub-goals included", () => {
+  const save = {
+    done: {
+      "spirit-tree": true,
+      "spirit-tree.75construction": true,
+      "hallowed-shard.sepulchre.sins.50slayer": true,
+      "herb-run.weiss.arm": true // unrenamed, must survive
+    },
+    collapsed: { "hallowed-shard": true },
+    linkedEdges: { "spirit-tree.83farming": ["hallowed-shard.sepulchre"] },
+    rootGoals: { "hallowed-shard.sepulchre.sins": true }
+  };
+  const m = migrateStateData(save);
+  assert.strictEqual(m.done["spirit-tree-construction"], true);
+  assert.strictEqual(m.done["spirit-tree-construction.75construction"], true);
+  assert.strictEqual(m.done["hallowed-crystal-shard.sepulchre.sins.50slayer"], true);
+  assert.strictEqual(m.done["herb-run.weiss.arm"], true);
+  assert.ok(!("spirit-tree" in m.done), "old spirit-tree id must be gone");
+  assert.strictEqual(m.collapsed["hallowed-crystal-shard"], true);
+  assert.deepStrictEqual(m.linkedEdges, {
+    "spirit-tree-construction.83farming": ["hallowed-crystal-shard.sepulchre"]
+  });
+  assert.deepStrictEqual(m.rootGoals, { "hallowed-crystal-shard.sepulchre.sins": true });
 });
 
 test("handles a missing/undefined state gracefully (no crash)", () => {

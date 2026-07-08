@@ -176,36 +176,36 @@ var GOAL_DATA = [
     ]
   },
   {
-    id: "spirit-tree",
+    id: "spirit-tree-construction",
     title: "Spirit Tree (Construction)",
     type: "other",
-    icon: "Spirit_tree.png",
-    link: "https://oldschool.runescape.wiki/w/Spirit_tree",
+    icon: "Spirit_tree_(Construction)_icon.png",
+    link: "https://oldschool.runescape.wiki/w/Spirit_tree_(Construction)",
     children: [
-      { id: "spirit-tree.75construction", title: "75 Construction (70, boostable)", type: "skill" },
-      { id: "spirit-tree.83farming", title: "83 Farming (78, boostable)", type: "skill" }
+      { id: "spirit-tree-construction.75construction", title: "75 Construction (70, boostable)", type: "skill" },
+      { id: "spirit-tree-construction.83farming", title: "83 Farming (78, boostable)", type: "skill" }
     ]
   },
   {
-    id: "hallowed-shard",
+    id: "hallowed-crystal-shard",
     title: "Hallowed Crystal Shard",
     type: "other",
     icon: "Hallowed_crystal_shard.png",
     link: "https://oldschool.runescape.wiki/w/Hallowed_crystal_shard",
     children: [
       {
-        id: "hallowed-shard.sepulchre",
+        id: "hallowed-crystal-shard.sepulchre",
         title: "Hallowed Sepulchre",
         type: "other",
         link: "https://oldschool.runescape.wiki/w/Hallowed_Sepulchre",
         children: [
           {
-            id: "hallowed-shard.sepulchre.sins",
+            id: "hallowed-crystal-shard.sepulchre.sins",
             title: "Sins of the Father",
             type: "quest",
             children: [
-              { id: "hallowed-shard.sepulchre.sins.50slayer", title: "50 Slayer", type: "skill", shared: "50-slayer" },
-              { id: "hallowed-shard.sepulchre.sins.taste-of-hope", title: "A Taste of Hope", type: "quest" }
+              { id: "hallowed-crystal-shard.sepulchre.sins.50slayer", title: "50 Slayer", type: "skill", shared: "50-slayer" },
+              { id: "hallowed-crystal-shard.sepulchre.sins.taste-of-hope", title: "A Taste of Hope", type: "quest" }
             ]
           }
         ]
@@ -599,8 +599,8 @@ var GEAR_GROUPS = [
   ["gear.dragon-defender", "gear.book-of-the-dead", "gear.salve-amulet-ei", "gear.piety"],
   ["gear.mixed-hide-cape", "mixed-hide-boots"],
   ["gear.ava-s-accumulator", "imbued-zamorak-cape"],
-  ["spirit-tree"],
-  ["hallowed-shard"],
+  ["spirit-tree-construction"],
+  ["hallowed-crystal-shard"],
   ["gear.infinity-boots", "gear.mage-s-book"],
   ["gear.dark-altar-construction", "gear.rejuvenation-pool", "gear.basic-jewellery-box"],
   ["gear.arkan-blade"],

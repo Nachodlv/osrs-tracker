@@ -4,7 +4,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { classifyGroups, applyNewGoals, canonId } = require("./tools/crawl-ladlor");
+const { classifyGroups, applyNewGoals, canonId, splitStaleIds } = require("./tools/crawl-ladlor");
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -88,6 +88,23 @@ const idMapOf = (...ids) => new Map(ids.map(id => [canonId(id), id]));
   );
   const g = plan.goals.find(x => x.id === "gear.70-ranged");
   assert(g && g.type === "skill", "type: level requirement is skill");
+}
+
+// 5b. splitStaleIds: title-dict ids that render in no node are stale, not drift.
+{
+  const onlyLive = [
+    { id: "spirit-tree-construction", title: "Spirit tree (Construction)" }, // grouped + rendered
+    { id: "brand-new-gear", title: "Brand new gear" },                       // ungrouped but rendered
+    { id: "ghommals-hilt-5", title: "Ghommal's hilt 5" },                    // in the map, not rendered
+    { id: "greater-challenge", title: "Greater Challenge" }                  // in the map, not rendered
+  ];
+  const groupedCanon = new Set([canonId("spirit-tree-construction")]);
+  const renderedCanon = new Set([canonId("spirit-tree-construction"), canonId("brand-new-gear")]);
+  const { fresh, stale } = splitStaleIds(onlyLive, groupedCanon, renderedCanon);
+  assert(fresh.length === 1 && fresh[0].id === "brand-new-gear",
+    "splitStaleIds: rendered ungrouped id is fresh (grouped id excluded)");
+  assert(stale.length === 2 && stale.every(g => /ghommals-hilt-5|greater-challenge/.test(g.id)),
+    "splitStaleIds: unrendered title-dict ids are stale");
 }
 
 // 6. applyNewGoals writes valid data.js: append to a tier + add a new tier.

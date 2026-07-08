@@ -134,7 +134,17 @@ const ID_MIGRATIONS = {
   "gear-progression.tier53.elidinis-ward": "gear.elidinis-ward",
   "gear-progression.saturated-heart": "gear.saturated-heart",
   "gear-progression.tier55.zaryte-crossbow": "gear.zaryte-crossbow",
-  "gear-progression.tier55.zaryte-vambraces": "gear.zaryte-vambraces"
+  "gear-progression.tier55.zaryte-vambraces": "gear.zaryte-vambraces",
+  // Ladlord chart re-keyed these two goals to slugs matching its live nodes; the
+  // sub-goal ids follow their parent's new prefix.
+  "spirit-tree": "spirit-tree-construction",
+  "spirit-tree.75construction": "spirit-tree-construction.75construction",
+  "spirit-tree.83farming": "spirit-tree-construction.83farming",
+  "hallowed-shard": "hallowed-crystal-shard",
+  "hallowed-shard.sepulchre": "hallowed-crystal-shard.sepulchre",
+  "hallowed-shard.sepulchre.sins": "hallowed-crystal-shard.sepulchre.sins",
+  "hallowed-shard.sepulchre.sins.50slayer": "hallowed-crystal-shard.sepulchre.sins.50slayer",
+  "hallowed-shard.sepulchre.sins.taste-of-hope": "hallowed-crystal-shard.sepulchre.sins.taste-of-hope"
 };
 
 function remapId(id) {
