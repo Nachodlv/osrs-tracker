@@ -4,7 +4,8 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { classifyGroups, applyNewGoals, canonId, splitStaleIds } = require("./tools/crawl-ladlor");
+const { classifyGroups, applyNewGoals, canonId, splitStaleIds,
+  slugify, repoGroupsShape, repoTitleMap } = require("./tools/crawl-ladlor");
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -105,6 +106,51 @@ const idMapOf = (...ids) => new Map(ids.map(id => [canonId(id), id]));
     "splitStaleIds: rendered ungrouped id is fresh (grouped id excluded)");
   assert(stale.length === 2 && stale.every(g => /ghommals-hilt-5|greater-challenge/.test(g.id)),
     "splitStaleIds: unrendered title-dict ids are stale");
+}
+
+// 7. slugify matches the ids ladlorchart.com renders (drops ' and (), collapses
+//    other punctuation to single hyphens, strips a leading "*").
+{
+  assert(slugify("Amulet of strength") === "amulet-of-strength", "slugify: spaces");
+  assert(slugify("Iban's staff (u)") === "ibans-staff-u", "slugify: apostrophe + parens");
+  assert(slugify("Salve amulet(ei)") === "salve-amuletei", "slugify: glued parens");
+  assert(slugify("*Dragon hunter lance") === "dragon-hunter-lance", "slugify: leading star stripped");
+  assert(slugify("69 Slayer") === "69-slayer", "slugify: numeric skill req");
+}
+
+// 8. repoGroupsShape: seq (arrays of titles) + meta (title -> icon/wiki) become
+//    the { groups, rendered } shape fetchLiveGroups produces; "*" items dropped.
+{
+  const seq = [
+    ["Amulet of strength", "Climbing boots"],
+    ["Ferocious gloves", "*Dragon hunter lance"],
+    ["69 Slayer"]
+  ];
+  const meta = {
+    "Amulet of strength": { wikiUrl: "https://w/Amulet_of_strength", imgUrl: "https://img/Amulet_of_strength.png", type: "item" },
+    "Climbing boots": { wikiUrl: "https://w/Climbing_boots", imgUrl: "https://img/Climbing_boots.png", type: "item" },
+    "Ferocious gloves": { wikiUrl: "https://w/Ferocious_gloves", imgUrl: "https://img/Ferocious_gloves.png", type: "item" },
+    "Dragon hunter lance": { wikiUrl: "https://w/Dragon_hunter_lance", imgUrl: "https://img/Dragon_hunter_lance.png", type: "item" }
+  };
+  const { groups, rendered } = repoGroupsShape({ seq, meta });
+  assert(groups.length === 3, "repoGroupsShape: three groups");
+  assert(groups[0][0].id === "amulet-of-strength" && groups[0][0].icon === "https://img/Amulet_of_strength.png" &&
+    groups[0][0].wiki === "https://w/Amulet_of_strength", "repoGroupsShape: id/icon/wiki resolved from meta");
+  assert(groups[1].length === 1 && groups[1][0].id === "ferocious-gloves",
+    "repoGroupsShape: *-annotated member dropped to match live");
+  const skill = groups[2][0];
+  assert(skill.id === "69-slayer" && skill.icon === "" && skill.wiki === "",
+    "repoGroupsShape: skill-req has empty icon/wiki (no meta entry)");
+  assert(!rendered.includes("dragon-hunter-lance") && rendered.includes("ferocious-gloves"),
+    "repoGroupsShape: rendered excludes *-annotated, includes real members");
+}
+
+// 9. repoTitleMap: slug -> title over the same grouped, non-"*" items.
+{
+  const seq = [["Amulet of strength"], ["*Dragon hunter lance"]];
+  const map = repoTitleMap({ seq, meta: {} });
+  assert(map["amulet-of-strength"] === "Amulet of strength", "repoTitleMap: slug maps to title");
+  assert(!("dragon-hunter-lance" in map), "repoTitleMap: *-annotated omitted");
 }
 
 // 6. applyNewGoals writes valid data.js: append to a tier + add a new tier.

@@ -11,17 +11,19 @@
 //                                          # reports goal ids present on the site
 //                                          # but missing from data.js, and vice
 //                                          # versa, so the template can be updated
-//   node tools/crawl-ladlor.js --groups   # render the live chart and diff its
-//                                          # tier-group layout against GEAR_GROUPS
-//                                          # (add --emit to print a suggested
-//                                          # GEAR_GROUPS block). Needs a local
-//                                          # Chrome; --check/--ci do not.
+//   node tools/crawl-ladlor.js --groups   # diff the live tier-group layout
+//                                          # against GEAR_GROUPS (add --emit to
+//                                          # print a suggested GEAR_GROUPS block).
 //
-// ladlorchart.com ships a minified React bundle with an embedded id -> title map
-// (but no cleanly extractable edge list), so --check is a drift detector, not a
-// full re-crawl. --groups goes further by rendering the SPA (the tier columns
-// only exist in the DOM), so it can reconcile GEAR_GROUPS too. Update data.js by
-// hand when either flags a change, then rerun this script to regenerate the JSON.
+// Live data now comes from the repo ladlorchart.com is generated from
+// (github.com/Madssb/InteractiveGearProg): its milestone-sequence-main.json +
+// milestone-metadata.json reproduce the tier columns exactly, so --check and
+// --groups both run over plain JSON with no local Chrome. The old scraping paths
+// (a minified-bundle id->title regex for --check, a headless-Chrome SPA render
+// for --groups) remain as automatic fallbacks if those files ever move. Neither
+// exposes a clean edge list, so --check stays a drift detector, not a full re-
+// crawl. Update data.js by hand when either flags a change, then rerun this
+// script to regenerate the JSON.
 
 const fs = require("fs");
 const path = require("path");
@@ -133,6 +135,101 @@ async function fetchLiveTitleMap() {
   return map;
 }
 
+// --- Repo JSON source (preferred over scraping) --------------------------
+//
+// ladlorchart.com is generated from github.com/Madssb/InteractiveGearProg. Its
+// tier sequence lives in data/logic/milestone-sequence-main.json (an array of
+// arrays of item titles) and each item's icon/wiki/type in
+// data/generated/milestone-metadata.json (keyed by title). Fetching those two
+// files reproduces the live tier columns exactly (verified: 56/56 groups, 136
+// items, no ungrouped nodes) without a headless-Chrome render or a minified-
+// bundle regex, so it is the primary source; the scraping paths above remain as
+// fallbacks. A leading "*" on a title is a source annotation for an item the
+// live chart does not render (e.g. "*Dragon hunter lance"), so those are skipped
+// to match the site.
+const REPO_RAW = "https://raw.githubusercontent.com/Madssb/InteractiveGearProg/main";
+const SEQ_URL = REPO_RAW + "/data/logic/milestone-sequence-main.json";
+const META_URL = REPO_RAW + "/data/generated/milestone-metadata.json";
+
+let repoDataCache = null;
+async function fetchRepoData() {
+  if (repoDataCache) return repoDataCache;
+  const [seqRaw, metaRaw] = await Promise.all([get(SEQ_URL), get(META_URL)]);
+  const seq = JSON.parse(seqRaw);
+  const meta = JSON.parse(metaRaw);
+  if (!Array.isArray(seq) || !seq.length) throw new Error("milestone sequence JSON was empty or not an array");
+  repoDataCache = { seq, meta };
+  return repoDataCache;
+}
+
+// Slug for a title, matching the id ladlorchart.com renders on each .node
+// (verified against the live DOM: 136/136). Drops a leading "*", apostrophes and
+// parentheses, and collapses other punctuation to single hyphens.
+function slugify(title) {
+  return String(title).replace(/^\*/, "").trim().toLowerCase()
+    .replace(/['()]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+// canonId(title) -> metadata entry, so a seq title resolves to its icon/wiki
+// even when its punctuation differs slightly from the metadata key.
+function metaByCanon(meta) {
+  const idx = new Map();
+  Object.keys(meta || {}).forEach(k => idx.set(canonId(k), meta[k]));
+  return idx;
+}
+
+// Build the { groups, rendered } shape fetchLiveGroups produces, from the repo
+// JSON. Members carry the same { id, title, wiki, icon } fields the DOM path
+// exposes, so every downstream consumer (computeGroupDrift, goalFromMember) is
+// unchanged. "*"-annotated titles are skipped to mirror the live chart; skill-
+// requirement titles ("69 Slayer") resolve to no metadata and carry empty
+// icon/wiki, exactly as the DOM path returns for them.
+function repoGroupsShape({ seq, meta }) {
+  const idx = metaByCanon(meta);
+  const rendered = [];
+  const groups = (seq || []).map(group => (group || [])
+    .filter(t => !String(t).trim().startsWith("*"))
+    .map(title => {
+      const clean = String(title).trim();
+      const slug = slugify(clean);
+      const m = idx.get(canonId(clean)) || {};
+      rendered.push(slug);
+      return { id: slug, title: clean, wiki: m.wikiUrl || "", icon: m.imgUrl || "" };
+    }))
+    .filter(g => g.length);
+  return { groups, rendered };
+}
+
+// Drop-in for fetchLiveTitleMap: slug -> title over the current, grouped items
+// (no stale dictionary leftovers, so nothing needs filtering downstream).
+function repoTitleMap({ seq, meta }) {
+  const map = {};
+  repoGroupsShape({ seq, meta }).groups.forEach(g => g.forEach(m => { map[m.id] = m.title; }));
+  return map;
+}
+
+// Group/title source with graceful fallback: prefer the repo JSON; on any
+// failure (network, schema change) fall back to the scraping paths so a run
+// degrades rather than dies. Both branches return identical shapes.
+async function fetchSourceGroups() {
+  try {
+    return repoGroupsShape(await fetchRepoData());
+  } catch (e) {
+    console.error("repo JSON group source failed (" + e.message + "); falling back to headless-Chrome render.");
+    return fetchLiveGroups();
+  }
+}
+async function fetchSourceTitleMap() {
+  try {
+    return repoTitleMap(await fetchRepoData());
+  } catch (e) {
+    console.error("repo JSON title source failed (" + e.message + "); falling back to the JS bundle.");
+    return fetchLiveTitleMap();
+  }
+}
+
 // Canonical comparison key. data.js ids are namespaced (e.g. "gear.osmumten-s-
 // fang") while the live map uses the bare slug ("osmumtens-fang"); the two also
 // encode possessives differently ("-s-" vs "s"). Strip the namespace and every
@@ -155,7 +252,7 @@ function collectIds(nodes, set) {
 async function check(GOAL_DATA) {
   let live;
   try {
-    live = await fetchLiveTitleMap();
+    live = await fetchSourceTitleMap();
   } catch (e) {
     console.error("--check skipped: " + e.message);
     return null;
@@ -302,9 +399,9 @@ async function computeGroupDrift() {
   const idMap = canonToId(GOAL_DATA, new Map());
   let raw;
   try {
-    raw = await fetchLiveGroups();
+    raw = await fetchSourceGroups();
   } catch (e) {
-    console.error("group render failed: " + e.message);
+    console.error("group source failed: " + e.message);
     return null;
   }
   const liveGroups = raw.groups.map(g => g.map(m => ({
@@ -577,7 +674,8 @@ async function ci() {
 
 // Exported for tests (test-crawl.js). The pure pieces, plan classification via
 // classifyGroups and the data.js writer applyNewGoals, run without a browser.
-module.exports = { classifyGroups, applyNewGoals, goalFromMember, canonId, pairGroups, splitStaleIds };
+module.exports = { classifyGroups, applyNewGoals, goalFromMember, canonId, pairGroups, splitStaleIds,
+  slugify, repoGroupsShape, repoTitleMap };
 
 if (require.main === module) {
   (async function main() {
