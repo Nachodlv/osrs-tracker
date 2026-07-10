@@ -249,14 +249,18 @@ let undoData = null; // { before, label }
 let undoToastEl = null;
 let undoToastTimer = null;
 
-function withUndo(label, fn) {
+// opts (optional): { force, restore }. `force` offers the undo even when `state`
+// is byte-identical (a template swap changes the chart via GOAL_DATA / the pinned
+// base, not always via `state`). `restore` runs during undo to roll back the
+// non-`state` bits the action touched (profile pin + base snapshot + globals).
+function withUndo(label, fn, opts) {
   if (undoActive) return fn(); // nested; the outermost action owns the undo
   undoActive = true;
   const before = JSON.stringify(state);
   let result;
   try { result = fn(); } finally { undoActive = false; }
-  if (JSON.stringify(state) !== before) {
-    undoData = { before, label };
+  if (JSON.stringify(state) !== before || (opts && opts.force)) {
+    undoData = { before, label, restore: (opts && opts.restore) || null };
     showUndoToast(label);
   }
   return result;
@@ -275,9 +279,11 @@ function clearUndo() {
 
 function performUndo() {
   if (!undoData) return;
+  const restore = undoData.restore;
   state = JSON.parse(undoData.before);
   undoData = null;
   dismissUndoToast();
+  if (restore) restore(); // roll back pin/base/globals before rebuilding the chart
   saveState();
   render();
   showToast("Undone");
@@ -2767,7 +2773,6 @@ const profileSelectEl = document.getElementById("profileSelect");
 const profileDeleteBtnEl = document.getElementById("profileDeleteBtn");
 const profileNewBtnEl = document.getElementById("profileNewBtn");
 const profileRenameBtnEl = document.getElementById("profileRenameBtn");
-const profileChangeTemplateBtnEl = document.getElementById("profileChangeTemplateBtn");
 const profileExportBtnEl = document.getElementById("profileExportBtn");
 const profileImportBtnEl = document.getElementById("profileImportBtn");
 const profileImportInputEl = document.getElementById("profileImportInput");
@@ -2838,7 +2843,7 @@ function refreshTemplateSelect() {
   Templates.listTemplates().forEach(t => {
     const opt = document.createElement("option");
     opt.value = t.id;
-    opt.textContent = t.name;
+    opt.textContent = `${t.name} (${(t.goalData || []).length} goals)`;
     if (t.id === Templates.DEFAULT_TEMPLATE_ID) opt.selected = true;
     profileTemplateSelectEl.appendChild(opt);
   });
@@ -2896,7 +2901,6 @@ document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (!profileNameModalEl.hidden) closeProfileNameModal();
   if (!profileDeleteModalEl.hidden) closeProfileDeleteModal();
-  if (changeTemplateModalEl && !changeTemplateModalEl.hidden) closeChangeTemplateModal();
   if (!templatesModalEl.hidden) closeTemplatesModal();
   if (templateChangesModalEl && !templateChangesModalEl.hidden) closeTemplateChangesModal();
 });
@@ -3177,20 +3181,13 @@ function openTemplateChangesModal(profileId) {
 if (templateChangesCancelEl) templateChangesCancelEl.addEventListener("click", closeTemplateChangesModal);
 if (templateChangesModalEl) templateChangesModalEl.addEventListener("click", e => { if (e.target === templateChangesModalEl) closeTemplateChangesModal(); });
 
-// --- Change a profile's template -------------------------------------------------
-// Apply a template to an existing save. "merge" adds the template's goals on top
-// of the current chart; "replace" swaps the profile's template content for the
-// selected one (removing the old template's goals). Either way the profile is
-// re-pinned to the selected template. The save's own progress, hidden goals, and
-// custom goals are kept: progress is keyed by goal id, so it survives on every
-// goal the new template shares.
-const changeTemplateModalEl = document.getElementById("changeTemplateModal");
-const changeTemplateSelectEl = document.getElementById("changeTemplateSelect");
-const changeTemplateOriginalRowEl = document.getElementById("changeTemplateOriginalRow");
-const changeTemplateOriginalSelectEl = document.getElementById("changeTemplateOriginalSelect");
-const changeTemplateReplaceLabelEl = document.getElementById("changeTemplateReplaceLabel");
-const changeTemplateConfirmEl = document.getElementById("changeTemplateConfirm");
-const changeTemplateCancelEl = document.getElementById("changeTemplateCancel");
+// --- Apply a template to the current profile -------------------------------------
+// Driven from the Templates hub ("Use in this profile"). "merge" adds the
+// template's goals on top of the current chart; "replace" swaps the profile's
+// template content for the selected one. Either way the profile is re-pinned to
+// the selected template. The save's own progress, hidden goals, and custom goals
+// are kept: progress is keyed by goal id, so it survives on every goal the new
+// template shares.
 
 // The active profile's live goal data, used as the merge base when it has no
 // stored snapshot (an internal "__full__" profile renders the live tree).
@@ -3228,82 +3225,49 @@ function changeProfileTemplate(profileId, templateId, mode) {
   const p = profilesMeta.profiles[profileId];
   const t = Templates.getTemplate(templateId);
   if (!p || !t || t.internal) return;
-  let base;
-  if (mode === "merge") {
-    const current = loadTemplateBase(profileId) || currentContentSnapshot();
-    base = mergeTemplateContent(current, { goalData: t.goalData, gearGroups: t.gearGroups });
-  } else {
-    base = { goalData: t.goalData, gearGroups: t.gearGroups };
-  }
-  saveTemplateBase(profileId, base);
-  p.templateId = t.id;
-  p.templateVersion = t.version || 1;
-  delete p.dismissedVersion;
-  saveProfilesMeta();
-  applyProfileTemplate(profileId);
-  render();               // rebuild currentNodes from the new base content
-  addNewTemplateGroups(); // then adopt any groups the template added
-  saveState();
-  render();
-  refreshProfileSelect();
-  renderTemplateBanner();
-  showToast(mode === "merge" ? `Added "${t.name}" to this profile` : `Replaced template with "${t.name}"`);
+
+  // Undo has to roll back more than `state`: the profile's pin, its stored base
+  // snapshot, and the global GOAL_DATA the chart renders from.
+  const beforeMeta = { templateId: p.templateId, templateVersion: p.templateVersion, dismissedVersion: p.dismissedVersion };
+  const beforeBase = loadTemplateBase(profileId);
+  const restore = () => {
+    const pr = profilesMeta.profiles[profileId];
+    if (!pr) return;
+    pr.templateId = beforeMeta.templateId;
+    pr.templateVersion = beforeMeta.templateVersion;
+    if (beforeMeta.dismissedVersion === undefined) delete pr.dismissedVersion;
+    else pr.dismissedVersion = beforeMeta.dismissedVersion;
+    if (beforeBase) saveTemplateBase(profileId, beforeBase);
+    else localStorage.removeItem(baseKeyFor(profileId));
+    saveProfilesMeta();
+    applyProfileTemplate(profileId);
+    refreshProfileSelect();
+    renderTemplateBanner();
+  };
+
+  const label = mode === "merge" ? `Added "${t.name}"` : `Replaced template with "${t.name}"`;
+  withUndo(label, () => {
+    let base;
+    if (mode === "merge") {
+      const current = loadTemplateBase(profileId) || currentContentSnapshot();
+      base = mergeTemplateContent(current, { goalData: t.goalData, gearGroups: t.gearGroups });
+    } else {
+      base = { goalData: t.goalData, gearGroups: t.gearGroups };
+    }
+    saveTemplateBase(profileId, base);
+    p.templateId = t.id;
+    p.templateVersion = t.version || 1;
+    delete p.dismissedVersion;
+    saveProfilesMeta();
+    applyProfileTemplate(profileId);
+    render();               // rebuild currentNodes from the new base content
+    addNewTemplateGroups(); // then adopt any groups the template added
+    saveState();
+    render();
+    refreshProfileSelect();
+    renderTemplateBanner();
+  }, { force: true, restore });
 }
-
-function closeChangeTemplateModal() { if (changeTemplateModalEl) changeTemplateModalEl.hidden = true; }
-
-// Replace is only offered when we know the old template (it still resolves, or
-// the user reconnected one from the list); otherwise only "add on top" is shown.
-function updateChangeTemplateModes() {
-  const p = profilesMeta.profiles[profilesMeta.activeId];
-  const originalResolves = !!Templates.getTemplate(p && p.templateId);
-  const reconnected = !changeTemplateOriginalRowEl.hidden && !!changeTemplateOriginalSelectEl.value;
-  const replaceAllowed = originalResolves || reconnected;
-  const replaceRadio = changeTemplateModalEl.querySelector('input[value="replace"]');
-  if (replaceRadio) replaceRadio.disabled = !replaceAllowed;
-  if (changeTemplateReplaceLabelEl) changeTemplateReplaceLabelEl.classList.toggle("disabled", !replaceAllowed);
-  if (!replaceAllowed && replaceRadio && replaceRadio.checked) {
-    const mergeRadio = changeTemplateModalEl.querySelector('input[value="merge"]');
-    if (mergeRadio) mergeRadio.checked = true;
-  }
-}
-
-function fillTemplateOptions(sel, includeBlank) {
-  sel.innerHTML = "";
-  if (includeBlank) {
-    const blank = document.createElement("option");
-    blank.value = ""; blank.textContent = "— select original template —";
-    sel.appendChild(blank);
-  }
-  Templates.listTemplates().forEach(t => {
-    const opt = document.createElement("option");
-    opt.value = t.id; opt.textContent = t.name;
-    sel.appendChild(opt);
-  });
-}
-
-function openChangeTemplateModal() {
-  if (!changeTemplateModalEl) return;
-  const p = profilesMeta.profiles[profilesMeta.activeId];
-  const originalMissing = !Templates.getTemplate(p && p.templateId);
-  fillTemplateOptions(changeTemplateSelectEl, false);
-  changeTemplateOriginalRowEl.hidden = !originalMissing;
-  if (originalMissing) fillTemplateOptions(changeTemplateOriginalSelectEl, true);
-  const mergeRadio = changeTemplateModalEl.querySelector('input[value="merge"]');
-  if (mergeRadio) mergeRadio.checked = true;
-  updateChangeTemplateModes();
-  changeTemplateModalEl.hidden = false;
-}
-
-if (profileChangeTemplateBtnEl) profileChangeTemplateBtnEl.addEventListener("click", openChangeTemplateModal);
-if (changeTemplateOriginalSelectEl) changeTemplateOriginalSelectEl.addEventListener("change", updateChangeTemplateModes);
-if (changeTemplateCancelEl) changeTemplateCancelEl.addEventListener("click", closeChangeTemplateModal);
-if (changeTemplateModalEl) changeTemplateModalEl.addEventListener("click", e => { if (e.target === changeTemplateModalEl) closeChangeTemplateModal(); });
-if (changeTemplateConfirmEl) changeTemplateConfirmEl.addEventListener("click", () => {
-  const modeInput = changeTemplateModalEl.querySelector('input[name="changeTemplateMode"]:checked');
-  changeProfileTemplate(profilesMeta.activeId, changeTemplateSelectEl.value, modeInput ? modeInput.value : "merge");
-  closeChangeTemplateModal();
-});
 
 // --- Template management ---------------------------------------------------------
 // Add or remove new-profile templates. Built-in templates (Empty, Ladlor) are
@@ -3369,58 +3333,148 @@ function downloadTemplate(t) {
   URL.revokeObjectURL(a.href);
 }
 
+// "N top-level goals · G groups", so a template's contents are visible before it
+// is picked (here and, abbreviated, in the new-profile picker).
+function templateSummary(t) {
+  const goals = (t.goalData || []).length;
+  const groups = (t.gearGroups || []).length;
+  return goals + " top-level goal" + (goals === 1 ? "" : "s")
+    + " · " + groups + " group" + (groups === 1 ? "" : "s");
+}
+
+// Apply a template to the active profile from the hub, then refresh the list so
+// its "in use" / update state reflects the change.
+function applyTemplateToProfile(t, mode) {
+  changeProfileTemplate(profilesMeta.activeId, t.id, mode);
+  renderTemplatesList();
+}
+
+// Swap a row's action buttons for the merge/replace choice ("Use in this
+// profile"). Replace is safe even when the old template is unknown (the base is
+// rebuilt from the chosen template), so both are always offered.
+function showUsePrompt(actions, t) {
+  actions.innerHTML = "";
+  const label = document.createElement("span");
+  label.className = "templates-use-label";
+  label.textContent = "Apply:";
+  actions.appendChild(label);
+  const add = document.createElement("button");
+  add.textContent = "Add on top";
+  add.title = "Add this template's goals on top of the current save";
+  add.addEventListener("click", () => applyTemplateToProfile(t, "merge"));
+  actions.appendChild(add);
+  const rep = document.createElement("button");
+  rep.textContent = "Replace";
+  rep.title = "Replace the current chart with this template (progress is kept, keyed by goal id)";
+  rep.addEventListener("click", () => applyTemplateToProfile(t, "replace"));
+  actions.appendChild(rep);
+  const cancel = document.createElement("button");
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", () => renderTemplateRowActions(actions, t));
+  actions.appendChild(cancel);
+}
+
+// Default action buttons for a template row: use here, export, and (user
+// templates only) update-from-file and a two-step remove.
+function renderTemplateRowActions(actions, t) {
+  actions.innerHTML = "";
+  const use = document.createElement("button");
+  use.textContent = "Use in this profile";
+  use.title = "Apply this template to the current profile";
+  use.addEventListener("click", () => showUsePrompt(actions, t));
+  actions.appendChild(use);
+  const dl = document.createElement("button");
+  dl.textContent = "Export";
+  dl.addEventListener("click", () => downloadTemplate(t));
+  actions.appendChild(dl);
+  if (!t.builtin) {
+    // Re-upload new content to bump this template's version in place, so
+    // profiles created from it can adopt the update via the banner and hub.
+    const upd = document.createElement("button");
+    upd.textContent = "Update from file";
+    upd.title = "Replace this template's content from a JSON file and bump its version";
+    upd.addEventListener("click", () => updateTemplateFromFile(t));
+    actions.appendChild(upd);
+    // Two-step confirm: the first click arms the button, a second click within
+    // a few seconds actually removes it (reverts otherwise).
+    const rm = document.createElement("button");
+    rm.className = "danger";
+    rm.textContent = "Remove";
+    let armed = false, armTimer = null;
+    rm.addEventListener("click", () => {
+      if (!armed) {
+        armed = true;
+        rm.textContent = "Confirm remove";
+        rm.classList.add("confirming");
+        armTimer = setTimeout(() => {
+          armed = false;
+          rm.textContent = "Remove";
+          rm.classList.remove("confirming");
+        }, 4000);
+        return;
+      }
+      clearTimeout(armTimer);
+      Templates.removeUserTemplate(t.id);
+      renderTemplatesList();
+      showToast(`Removed template "${t.name}"`);
+    });
+    actions.appendChild(rm);
+  }
+}
+
 function renderTemplatesList() {
   templatesListEl.innerHTML = "";
+  const activeTid = templateIdFor(profilesMeta.activeId);
+  const upd = templateUpdateInfo(profilesMeta.activeId);
   Templates.listTemplates().forEach(t => {
     const li = document.createElement("li");
     li.className = "templates-list-item";
-    const label = document.createElement("span");
-    label.className = "templates-list-name";
-    const count = (t.goalData || []).length;
-    label.textContent = t.name + (t.builtin ? " (built-in)" : "") + " · v" + (t.version || 1)
-      + " — " + count + " top-level goals";
-    li.appendChild(label);
+
+    const info = document.createElement("div");
+    info.className = "templates-list-info";
+
+    const name = document.createElement("div");
+    name.className = "templates-list-name";
+    name.textContent = t.name;
+    if (t.builtin) {
+      const tag = document.createElement("span");
+      tag.className = "templates-tag";
+      tag.textContent = "built-in";
+      name.appendChild(tag);
+    }
+    if (t.id === activeTid) {
+      const tag = document.createElement("span");
+      tag.className = "templates-tag in-use";
+      tag.textContent = "in use";
+      name.appendChild(tag);
+    }
+    info.appendChild(name);
+
+    const meta = document.createElement("div");
+    meta.className = "templates-list-meta";
+    meta.textContent = "v" + (t.version || 1) + " · " + templateSummary(t);
+    info.appendChild(meta);
+
+    // The update-available state (was a top-of-page banner only) now surfaces on
+    // the affected profile's template row too, with the version numbers kept.
+    if (upd && upd.template.id === t.id) {
+      const note = document.createElement("div");
+      note.className = "templates-update-note";
+      const text = document.createElement("span");
+      text.textContent = `Update available: v${upd.from} → v${upd.to}`;
+      const review = document.createElement("button");
+      review.textContent = "Review";
+      review.addEventListener("click", () => openTemplateChangesModal(profilesMeta.activeId));
+      note.appendChild(text);
+      note.appendChild(review);
+      info.appendChild(note);
+    }
+
+    li.appendChild(info);
+
     const actions = document.createElement("div");
     actions.className = "templates-list-actions";
-    const dl = document.createElement("button");
-    dl.textContent = "Download";
-    dl.addEventListener("click", () => downloadTemplate(t));
-    actions.appendChild(dl);
-    if (!t.builtin) {
-      // Re-upload new content to bump this template's version in place, so
-      // profiles created from it can adopt the update via the banner.
-      const upd = document.createElement("button");
-      upd.textContent = "Update from file";
-      upd.title = "Replace this template's content from a JSON file and bump its version";
-      upd.addEventListener("click", () => updateTemplateFromFile(t));
-      actions.appendChild(upd);
-    }
-    if (!t.builtin) {
-      // Two-step confirm: the first click arms the button, a second click within
-      // a few seconds actually removes it (reverts otherwise).
-      const rm = document.createElement("button");
-      rm.className = "danger";
-      rm.textContent = "Remove";
-      let armed = false, armTimer = null;
-      rm.addEventListener("click", () => {
-        if (!armed) {
-          armed = true;
-          rm.textContent = "Confirm remove";
-          rm.classList.add("confirming");
-          armTimer = setTimeout(() => {
-            armed = false;
-            rm.textContent = "Remove";
-            rm.classList.remove("confirming");
-          }, 4000);
-          return;
-        }
-        clearTimeout(armTimer);
-        Templates.removeUserTemplate(t.id);
-        renderTemplatesList();
-        showToast(`Removed template "${t.name}"`);
-      });
-      actions.appendChild(rm);
-    }
+    renderTemplateRowActions(actions, t);
     li.appendChild(actions);
     templatesListEl.appendChild(li);
   });

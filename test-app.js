@@ -558,6 +558,34 @@ test("changeProfileTemplate replaces the base and re-pins to the selected templa
   assert.strictEqual(r.onlyNew, true, "replace swaps the base for the selected template's content");
 });
 
+test("performUndo rolls back a changeProfileTemplate: pin, version, and base snapshot", () => {
+  const r = inCtx(`
+    const t = Templates.addUserTemplate({ name: "Undo", goalData: [{ id: "undo-goal", title: "Undo", children: [] }] });
+    createProfile("ToUndo", "ladlor");
+    const id = profilesMeta.activeId;
+    const ladlorVer = Templates.getTemplate("ladlor").version || 1;
+    changeProfileTemplate(id, t.id, "replace");
+    const changedPin = profilesMeta.profiles[id].templateId;
+    const changedIds = (loadTemplateBase(id).goalData || []).map(n => n.id);
+    performUndo();
+    const p = profilesMeta.profiles[id];
+    const undoneIds = (loadTemplateBase(id).goalData || []).map(n => n.id);
+    Templates.removeUserTemplate(t.id);
+    return {
+      tid: t.id, ladlorVer,
+      changedPin, changedToSwap: changedIds.length === 1 && changedIds[0] === "undo-goal",
+      undonePin: p.templateId, undoneVer: p.templateVersion,
+      undoneHasSwap: undoneIds.indexOf("undo-goal") !== -1, undoneCount: undoneIds.length
+    };
+  `);
+  assert.strictEqual(r.changedPin, r.tid, "the change repins to the user template");
+  assert.strictEqual(r.changedToSwap, true, "the change swaps the base to the user template");
+  assert.strictEqual(r.undonePin, "ladlor", "undo restores the original pin");
+  assert.strictEqual(r.undoneVer, r.ladlorVer, "undo restores the original template version");
+  assert.strictEqual(r.undoneHasSwap, false, "undo drops the applied template's base content");
+  assert.ok(r.undoneCount > 1, "undo restores the original (ladlor) base snapshot");
+});
+
 test("updating to a template that dropped a group ungroups the goal in the save", () => {
   const r = inCtx(`
     const t = Templates.addUserTemplate({ name: "Grp", goalData: [
