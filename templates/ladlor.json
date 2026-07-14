@@ -1,8 +1,8 @@
 {
   "name": "Ironman Ladlord Chart",
   "source": "https://ladlorchart.com",
-  "version": 2,
-  "generatedAt": "2026-07-08T20:02:27.187Z",
+  "version": 3,
+  "generatedAt": "2026-07-10T16:31:19.434Z",
   "goalData": [
     {
       "id": "mixed-hide-boots",
@@ -39,7 +39,7 @@
     {
       "id": "gear.amulet-of-strength",
       "title": "Amulet of strength",
-      "type": "other",
+      "type": "item",
       "icon": "Amulet_of_strength.png",
       "link": "https://oldschool.runescape.wiki/w/Amulet_of_strength",
       "children": []
@@ -47,7 +47,7 @@
     {
       "id": "gear.climbing-boots",
       "title": "Climbing boots",
-      "type": "other",
+      "type": "item",
       "icon": "Climbing_boots.png",
       "link": "https://oldschool.runescape.wiki/w/Climbing_boots",
       "children": []
@@ -55,7 +55,7 @@
     {
       "id": "gear.rune-pouch",
       "title": "Rune pouch",
-      "type": "other",
+      "type": "item",
       "icon": "Rune_pouch.png",
       "link": "https://oldschool.runescape.wiki/w/Rune_pouch",
       "children": []
@@ -63,7 +63,7 @@
     {
       "id": "gear.iban-s-staff-u",
       "title": "Iban's staff (u)",
-      "type": "other",
+      "type": "item",
       "icon": "Iban's_staff_(u).png",
       "link": "https://oldschool.runescape.wiki/w/Iban's_staff_(u)",
       "children": []
@@ -79,7 +79,7 @@
     {
       "id": "gear.ancient-staff",
       "title": "Ancient staff",
-      "type": "other",
+      "type": "item",
       "icon": "Ancient_staff.png",
       "link": "https://oldschool.runescape.wiki/w/Ancient_staff",
       "children": []
@@ -95,7 +95,7 @@
     {
       "id": "gear.fighter-torso",
       "title": "Fighter torso",
-      "type": "other",
+      "type": "item",
       "icon": "Fighter_torso.png",
       "link": "https://oldschool.runescape.wiki/w/Fighter_torso",
       "children": []
@@ -103,7 +103,7 @@
     {
       "id": "gear.granite-body",
       "title": "Granite body",
-      "type": "other",
+      "type": "item",
       "icon": "Granite_body.png",
       "link": "https://oldschool.runescape.wiki/w/Granite_body",
       "children": []
@@ -111,7 +111,7 @@
     {
       "id": "gear.dragon-scimitar",
       "title": "Dragon scimitar",
-      "type": "other",
+      "type": "item",
       "icon": "Dragon_scimitar.png",
       "link": "https://oldschool.runescape.wiki/w/Dragon_scimitar",
       "children": []
@@ -119,7 +119,7 @@
     {
       "id": "gear.dragon-dagger",
       "title": "Dragon dagger",
-      "type": "other",
+      "type": "item",
       "icon": "Dragon_dagger.png",
       "link": "https://oldschool.runescape.wiki/w/Dragon_dagger",
       "children": []
@@ -127,7 +127,7 @@
     {
       "id": "gear.berserker-ring-i",
       "title": "Berserker ring (i)",
-      "type": "other",
+      "type": "item",
       "icon": "Berserker_ring_(i).png",
       "link": "https://oldschool.runescape.wiki/w/Berserker_ring_(i)",
       "children": []
@@ -135,7 +135,7 @@
     {
       "id": "gear.helm-of-neitiznot",
       "title": "Helm of neitiznot",
-      "type": "other",
+      "type": "item",
       "icon": "Helm_of_neitiznot.png",
       "link": "https://oldschool.runescape.wiki/w/Helm_of_neitiznot",
       "children": []
@@ -143,7 +143,7 @@
     {
       "id": "gear.barrows-gloves",
       "title": "Barrows gloves",
-      "type": "other",
+      "type": "item",
       "icon": "Barrows_gloves.png",
       "link": "https://oldschool.runescape.wiki/w/Barrows_gloves",
       "children": []
@@ -151,7 +151,7 @@
     {
       "id": "gear.gem-bag",
       "title": "gem bag",
-      "type": "other",
+      "type": "item",
       "icon": "Gem_bag.png",
       "link": "https://oldschool.runescape.wiki/w/gem_bag",
       "children": []
@@ -159,7 +159,7 @@
     {
       "id": "gear.herb-sack",
       "title": "Herb sack",
-      "type": "other",
+      "type": "item",
       "icon": "Herb_sack.png",
       "link": "https://oldschool.runescape.wiki/w/Herb_sack",
       "children": []
@@ -167,7 +167,7 @@
     {
       "id": "gear.dragon-defender",
       "title": "Dragon defender",
-      "type": "other",
+      "type": "item",
       "icon": "Dragon_defender.png",
       "link": "https://oldschool.runescape.wiki/w/Dragon_defender",
       "children": []
@@ -175,7 +175,7 @@
     {
       "id": "gear.book-of-the-dead",
       "title": "Book of the dead",
-      "type": "other",
+      "type": "item",
       "icon": "Book_of_the_dead.png",
       "link": "https://oldschool.runescape.wiki/w/Book_of_the_dead",
       "children": []
@@ -183,7 +183,7 @@
     {
       "id": "gear.salve-amulet-ei",
       "title": "Salve amulet(ei)",
-      "type": "other",
+      "type": "item",
       "icon": "Salve_amulet(ei).png",
       "link": "https://oldschool.runescape.wiki/w/Salve_amulet(ei)",
       "children": []
@@ -199,7 +199,7 @@
     {
       "id": "gear.mixed-hide-cape",
       "title": "Mixed hide cape",
-      "type": "other",
+      "type": "item",
       "icon": "Mixed_hide_cape.png",
       "link": "https://oldschool.runescape.wiki/w/Mixed_hide_cape",
       "children": []
@@ -207,7 +207,7 @@
     {
       "id": "gear.ava-s-accumulator",
       "title": "Ava's accumulator",
-      "type": "other",
+      "type": "item",
       "icon": "Ava's_accumulator.png",
       "link": "https://oldschool.runescape.wiki/w/Ava's_accumulator",
       "children": []
@@ -215,7 +215,7 @@
     {
       "id": "gear.infinity-boots",
       "title": "Infinity boots",
-      "type": "other",
+      "type": "item",
       "icon": "Infinity_boots.png",
       "link": "https://oldschool.runescape.wiki/w/Infinity_boots",
       "children": []
@@ -223,7 +223,7 @@
     {
       "id": "gear.mage-s-book",
       "title": "Mage's book",
-      "type": "other",
+      "type": "item",
       "icon": "Mage's_book.png",
       "link": "https://oldschool.runescape.wiki/w/Mage's_book",
       "children": []
@@ -255,7 +255,7 @@
     {
       "id": "gear.arkan-blade",
       "title": "Arkan blade",
-      "type": "other",
+      "type": "item",
       "icon": "Arkan_blade.png",
       "link": "https://oldschool.runescape.wiki/w/Arkan_blade",
       "children": []
@@ -263,7 +263,7 @@
     {
       "id": "gear.black-mask-i",
       "title": "Black mask (i)",
-      "type": "other",
+      "type": "item",
       "icon": "Black_mask_(i).png",
       "link": "https://oldschool.runescape.wiki/w/Black_mask_(i)",
       "children": []
@@ -271,7 +271,7 @@
     {
       "id": "gear.bonecrusher",
       "title": "Bonecrusher",
-      "type": "other",
+      "type": "item",
       "icon": "Bonecrusher.png",
       "link": "https://oldschool.runescape.wiki/w/Bonecrusher",
       "children": []
@@ -279,7 +279,7 @@
     {
       "id": "gear.pharaoh-s-sceptre",
       "title": "Pharaoh's sceptre",
-      "type": "other",
+      "type": "item",
       "icon": "Pharaoh's_sceptre_(1).png",
       "link": "https://oldschool.runescape.wiki/w/Pharaoh's_sceptre",
       "children": []
@@ -287,7 +287,7 @@
     {
       "id": "gear.arclight",
       "title": "Arclight",
-      "type": "other",
+      "type": "item",
       "icon": "Arclight.png",
       "link": "https://oldschool.runescape.wiki/w/Arclight",
       "children": []
@@ -303,7 +303,7 @@
     {
       "id": "gear.slayer-helmet-i",
       "title": "Slayer helmet (i)",
-      "type": "other",
+      "type": "item",
       "icon": "Slayer_helmet_(i).png",
       "link": "https://oldschool.runescape.wiki/w/Slayer_helmet_(i)",
       "children": []
@@ -327,7 +327,7 @@
     {
       "id": "gear.ash-sanctifier",
       "title": "Ash sanctifier",
-      "type": "other",
+      "type": "item",
       "icon": "Ash_sanctifier.png",
       "link": "https://oldschool.runescape.wiki/w/Ash_sanctifier",
       "children": []
@@ -347,7 +347,7 @@
     {
       "id": "gear.karamja-gloves-3",
       "title": "Karamja gloves 3",
-      "type": "other",
+      "type": "item",
       "icon": "Karamja_gloves_3.png",
       "link": "https://oldschool.runescape.wiki/w/Karamja_gloves_3",
       "children": []
@@ -355,7 +355,7 @@
     {
       "id": "gear.amulet-of-glory",
       "title": "Amulet of glory",
-      "type": "other",
+      "type": "item",
       "icon": "Amulet_of_glory(4).png",
       "link": "https://oldschool.runescape.wiki/w/Amulet_of_glory",
       "children": []
@@ -363,7 +363,7 @@
     {
       "id": "gear.ghommal-s-hilt-2",
       "title": "Ghommal's hilt 2",
-      "type": "other",
+      "type": "item",
       "icon": "Ghommal's_hilt_2.png",
       "link": "https://oldschool.runescape.wiki/w/Ghommal's_hilt_2",
       "children": []
@@ -371,7 +371,7 @@
     {
       "id": "gear.void-knight-top",
       "title": "void knight top",
-      "type": "other",
+      "type": "item",
       "icon": "Void_knight_top.png",
       "link": "https://oldschool.runescape.wiki/w/void_knight_top",
       "children": []
@@ -379,7 +379,7 @@
     {
       "id": "gear.void-knight-robe",
       "title": "void knight robe",
-      "type": "other",
+      "type": "item",
       "icon": "Void_knight_robe.png",
       "link": "https://oldschool.runescape.wiki/w/void_knight_robe",
       "children": []
@@ -387,7 +387,7 @@
     {
       "id": "gear.void-ranger-helm",
       "title": "Void ranger helm",
-      "type": "other",
+      "type": "item",
       "icon": "Void_ranger_helm.png",
       "link": "https://oldschool.runescape.wiki/w/Void_ranger_helm",
       "children": []
@@ -395,7 +395,7 @@
     {
       "id": "gear.void-knight-gloves",
       "title": "Void knight gloves",
-      "type": "other",
+      "type": "item",
       "icon": "Void_knight_gloves.png",
       "link": "https://oldschool.runescape.wiki/w/Void_knight_gloves",
       "children": []
@@ -403,7 +403,7 @@
     {
       "id": "gear.red-chinchompa",
       "title": "Red chinchompa",
-      "type": "other",
+      "type": "item",
       "icon": "Red_chinchompa.png",
       "link": "https://oldschool.runescape.wiki/w/Red_chinchompa",
       "children": []
@@ -417,7 +417,7 @@
     {
       "id": "gear.elite-void-top",
       "title": "Elite void top",
-      "type": "other",
+      "type": "item",
       "icon": "Elite_void_top.png",
       "link": "https://oldschool.runescape.wiki/w/Elite_void_top",
       "children": []
@@ -425,7 +425,7 @@
     {
       "id": "gear.elite-void-robe",
       "title": "Elite void robe",
-      "type": "other",
+      "type": "item",
       "icon": "Elite_void_robe.png",
       "link": "https://oldschool.runescape.wiki/w/Elite_void_robe",
       "children": []
@@ -433,7 +433,7 @@
     {
       "id": "gear.crystal-halberd",
       "title": "Crystal halberd",
-      "type": "other",
+      "type": "item",
       "icon": "Crystal_halberd.png",
       "link": "https://oldschool.runescape.wiki/w/Crystal_halberd",
       "children": []
@@ -447,7 +447,7 @@
     {
       "id": "gear.crystal-body",
       "title": "Crystal body",
-      "type": "other",
+      "type": "item",
       "icon": "Crystal_body.png",
       "link": "https://oldschool.runescape.wiki/w/Crystal_body",
       "children": []
@@ -455,7 +455,7 @@
     {
       "id": "gear.crystal-legs",
       "title": "Crystal legs",
-      "type": "other",
+      "type": "item",
       "icon": "Crystal_legs.png",
       "link": "https://oldschool.runescape.wiki/w/Crystal_legs",
       "children": []
@@ -463,7 +463,7 @@
     {
       "id": "gear.crystal-helm",
       "title": "Crystal helm",
-      "type": "other",
+      "type": "item",
       "icon": "Crystal_helm.png",
       "link": "https://oldschool.runescape.wiki/w/Crystal_helm",
       "children": []
@@ -471,7 +471,7 @@
     {
       "id": "gear.bow-of-faerdhinen-c",
       "title": "Bow of faerdhinen (c)",
-      "type": "other",
+      "type": "item",
       "icon": "Bow_of_faerdhinen_(c).png",
       "link": "https://oldschool.runescape.wiki/w/Bow_of_faerdhinen_(c)",
       "children": []
@@ -479,7 +479,7 @@
     {
       "id": "gear.bloodbark-body",
       "title": "Bloodbark body",
-      "type": "other",
+      "type": "item",
       "icon": "Bloodbark_body.png",
       "link": "https://oldschool.runescape.wiki/w/Bloodbark_body",
       "children": []
@@ -487,7 +487,7 @@
     {
       "id": "gear.bloodbark-legs",
       "title": "Bloodbark legs",
-      "type": "other",
+      "type": "item",
       "icon": "Bloodbark_legs.png",
       "link": "https://oldschool.runescape.wiki/w/Bloodbark_legs",
       "children": []
@@ -495,7 +495,7 @@
     {
       "id": "gear.bloodbark-helm",
       "title": "Bloodbark helm",
-      "type": "other",
+      "type": "item",
       "icon": "Bloodbark_helm.png",
       "link": "https://oldschool.runescape.wiki/w/Bloodbark_helm",
       "children": []
@@ -503,7 +503,7 @@
     {
       "id": "gear.ava-s-assembler",
       "title": "Ava's assembler",
-      "type": "other",
+      "type": "item",
       "icon": "Ava's_assembler.png",
       "link": "https://oldschool.runescape.wiki/w/Ava's_assembler",
       "children": []
@@ -519,7 +519,7 @@
     {
       "id": "gear.fire-cape",
       "title": "Fire cape",
-      "type": "other",
+      "type": "item",
       "icon": "Fire_cape.png",
       "link": "https://oldschool.runescape.wiki/w/Fire_cape",
       "children": []
@@ -527,7 +527,7 @@
     {
       "id": "gear.ancient-icon",
       "title": "Ancient icon",
-      "type": "other",
+      "type": "item",
       "icon": "Ancient_icon.png",
       "link": "https://oldschool.runescape.wiki/w/Ancient_icon",
       "children": []
@@ -535,7 +535,7 @@
     {
       "id": "gear.dragon-pickaxe",
       "title": "Dragon pickaxe",
-      "type": "other",
+      "type": "item",
       "icon": "Dragon_pickaxe.png",
       "link": "https://oldschool.runescape.wiki/w/Dragon_pickaxe",
       "children": []
@@ -543,7 +543,7 @@
     {
       "id": "gear.wrath-rune",
       "title": "Wrath rune",
-      "type": "other",
+      "type": "item",
       "icon": "Wrath_rune.png",
       "link": "https://oldschool.runescape.wiki/w/Wrath_rune",
       "children": []
@@ -583,7 +583,7 @@
     {
       "id": "gear.karamja-gloves-4",
       "title": "Karamja gloves 4",
-      "type": "other",
+      "type": "item",
       "icon": "Karamja_gloves_4.png",
       "link": "https://oldschool.runescape.wiki/w/Karamja_gloves_4",
       "children": []
@@ -591,7 +591,7 @@
     {
       "id": "gear.explorer-s-ring-4",
       "title": "Explorer's ring 4",
-      "type": "other",
+      "type": "item",
       "icon": "Explorer's_ring_4.png",
       "link": "https://oldschool.runescape.wiki/w/Explorer's_ring_4",
       "children": []
@@ -599,7 +599,7 @@
     {
       "id": "gear.warped-sceptre",
       "title": "Warped sceptre",
-      "type": "other",
+      "type": "item",
       "icon": "Warped_sceptre.png",
       "link": "https://oldschool.runescape.wiki/w/Warped_sceptre",
       "children": []
@@ -615,7 +615,7 @@
     {
       "id": "gear.prescription-goggles",
       "title": "Prescription goggles",
-      "type": "other",
+      "type": "item",
       "icon": "Prescription_goggles_(unfocused).png",
       "link": "https://oldschool.runescape.wiki/w/Prescription_goggles",
       "children": []
@@ -623,7 +623,7 @@
     {
       "id": "gear.alchemist-s-amulet",
       "title": "Alchemist's amulet",
-      "type": "other",
+      "type": "item",
       "icon": "Alchemist's_amulet_(uncharged).png",
       "link": "https://oldschool.runescape.wiki/w/Alchemist's_amulet",
       "children": []
@@ -631,7 +631,7 @@
     {
       "id": "gear.amulet-of-torture",
       "title": "Amulet of torture",
-      "type": "other",
+      "type": "item",
       "icon": "Amulet_of_torture.png",
       "link": "https://oldschool.runescape.wiki/w/Amulet_of_torture",
       "children": []
@@ -639,7 +639,7 @@
     {
       "id": "gear.necklace-of-anguish",
       "title": "Necklace of anguish",
-      "type": "other",
+      "type": "item",
       "icon": "Necklace_of_anguish.png",
       "link": "https://oldschool.runescape.wiki/w/Necklace_of_anguish",
       "children": []
@@ -647,7 +647,7 @@
     {
       "id": "gear.zamorakian-hasta",
       "title": "Zamorakian hasta",
-      "type": "other",
+      "type": "item",
       "icon": "Zamorakian_hasta.png",
       "link": "https://oldschool.runescape.wiki/w/Zamorakian_hasta",
       "children": []
@@ -655,7 +655,7 @@
     {
       "id": "gear.bandos-godsword",
       "title": "Bandos godsword",
-      "type": "other",
+      "type": "item",
       "icon": "Bandos_godsword.png",
       "link": "https://oldschool.runescape.wiki/w/Bandos_godsword",
       "children": []
@@ -663,7 +663,7 @@
     {
       "id": "gear.voidwaker",
       "title": "Voidwaker",
-      "type": "other",
+      "type": "item",
       "icon": "Voidwaker.png",
       "link": "https://oldschool.runescape.wiki/w/Voidwaker",
       "children": []
@@ -687,7 +687,7 @@
     {
       "id": "gear.thread-of-elidinis",
       "title": "Thread of elidinis",
-      "type": "other",
+      "type": "item",
       "icon": "Thread_of_elidinis.png",
       "link": "https://oldschool.runescape.wiki/w/Thread_of_elidinis",
       "children": []
@@ -695,7 +695,7 @@
     {
       "id": "gear.lightbearer",
       "title": "Lightbearer",
-      "type": "other",
+      "type": "item",
       "icon": "Lightbearer.png",
       "link": "https://oldschool.runescape.wiki/w/Lightbearer",
       "children": []
@@ -703,7 +703,7 @@
     {
       "id": "gear.ghommal-s-hilt-4",
       "title": "Ghommal's hilt 4",
-      "type": "other",
+      "type": "item",
       "icon": "Ghommal's_hilt_4.png",
       "link": "https://oldschool.runescape.wiki/w/Ghommal's_hilt_4",
       "children": []
@@ -711,7 +711,7 @@
     {
       "id": "gear.abyssal-whip",
       "title": "Abyssal whip",
-      "type": "other",
+      "type": "item",
       "icon": "Abyssal_whip.png",
       "link": "https://oldschool.runescape.wiki/w/Abyssal_whip",
       "children": []
@@ -719,7 +719,7 @@
     {
       "id": "gear.abyssal-tentacle",
       "title": "Abyssal tentacle",
-      "type": "other",
+      "type": "item",
       "icon": "Abyssal_tentacle.png",
       "link": "https://oldschool.runescape.wiki/w/Abyssal_tentacle",
       "children": []
@@ -727,7 +727,7 @@
     {
       "id": "gear.dragon-warhammer",
       "title": "Dragon warhammer",
-      "type": "other",
+      "type": "item",
       "icon": "Dragon_warhammer.png",
       "link": "https://oldschool.runescape.wiki/w/Dragon_warhammer",
       "children": []
@@ -735,7 +735,7 @@
     {
       "id": "gear.emberlight",
       "title": "Emberlight",
-      "type": "other",
+      "type": "item",
       "icon": "Emberlight.png",
       "link": "https://oldschool.runescape.wiki/w/Emberlight",
       "children": []
@@ -743,7 +743,7 @@
     {
       "id": "gear.dragon-boots",
       "title": "Dragon boots",
-      "type": "other",
+      "type": "item",
       "icon": "Dragon_boots.png",
       "link": "https://oldschool.runescape.wiki/w/Dragon_boots",
       "children": []
@@ -751,7 +751,7 @@
     {
       "id": "gear.scorching-bow",
       "title": "Scorching bow",
-      "type": "other",
+      "type": "item",
       "icon": "Scorching_bow.png",
       "link": "https://oldschool.runescape.wiki/w/Scorching_bow",
       "children": []
@@ -759,7 +759,7 @@
     {
       "id": "gear.tormented-bracelet",
       "title": "Tormented bracelet",
-      "type": "other",
+      "type": "item",
       "icon": "Tormented_bracelet.png",
       "link": "https://oldschool.runescape.wiki/w/Tormented_bracelet",
       "children": []
@@ -767,7 +767,7 @@
     {
       "id": "gear.burning-claws",
       "title": "Burning claws",
-      "type": "other",
+      "type": "item",
       "icon": "Burning_claws.png",
       "link": "https://oldschool.runescape.wiki/w/Burning_claws",
       "children": []
@@ -775,7 +775,7 @@
     {
       "id": "gear.ring-of-suffering-i",
       "title": "Ring of suffering (i)",
-      "type": "other",
+      "type": "item",
       "icon": "Ring_of_suffering_(i).png",
       "link": "https://oldschool.runescape.wiki/w/Ring_of_suffering_(i)",
       "children": []
@@ -783,7 +783,7 @@
     {
       "id": "gear.avernic-treads",
       "title": "Avernic treads",
-      "type": "other",
+      "type": "item",
       "icon": "Avernic_treads.png",
       "link": "https://oldschool.runescape.wiki/w/Avernic_treads",
       "children": []
@@ -791,7 +791,7 @@
     {
       "id": "gear.rite-of-vile-transference",
       "title": "Rite of vile transference",
-      "type": "other",
+      "type": "item",
       "icon": "Rite_of_vile_transference.png",
       "link": "https://oldschool.runescape.wiki/w/Rite_of_vile_transference",
       "children": []
@@ -799,7 +799,7 @@
     {
       "id": "gear.desert-amulet-4",
       "title": "Desert amulet 4",
-      "type": "other",
+      "type": "item",
       "icon": "Desert_amulet_4.png",
       "link": "https://oldschool.runescape.wiki/w/Desert_amulet_4",
       "children": []
@@ -807,7 +807,7 @@
     {
       "id": "gear.rada-s-blessing-4",
       "title": "Rada's blessing 4",
-      "type": "other",
+      "type": "item",
       "icon": "Rada's_blessing_4.png",
       "link": "https://oldschool.runescape.wiki/w/Rada's_blessing_4",
       "children": []
@@ -815,7 +815,7 @@
     {
       "id": "gear.primordial-boots",
       "title": "Primordial boots",
-      "type": "other",
+      "type": "item",
       "icon": "Primordial_boots.png",
       "link": "https://oldschool.runescape.wiki/w/Primordial_boots",
       "children": []
@@ -823,7 +823,7 @@
     {
       "id": "gear.amulet-of-rancour",
       "title": "Amulet of rancour",
-      "type": "other",
+      "type": "item",
       "icon": "Amulet_of_rancour.png",
       "link": "https://oldschool.runescape.wiki/w/Amulet_of_rancour",
       "children": []
@@ -831,7 +831,7 @@
     {
       "id": "gear.eternal-boots",
       "title": "Eternal boots",
-      "type": "other",
+      "type": "item",
       "icon": "Eternal_boots.png",
       "link": "https://oldschool.runescape.wiki/w/Eternal_boots",
       "children": []
@@ -839,7 +839,7 @@
     {
       "id": "gear.occult-necklace",
       "title": "Occult necklace",
-      "type": "other",
+      "type": "item",
       "icon": "Occult_necklace.png",
       "link": "https://oldschool.runescape.wiki/w/Occult_necklace",
       "children": []
@@ -847,7 +847,7 @@
     {
       "id": "gear.eye-of-ayak",
       "title": "Eye of ayak",
-      "type": "other",
+      "type": "item",
       "icon": "Eye_of_ayak.png",
       "link": "https://oldschool.runescape.wiki/w/Eye_of_ayak",
       "children": []
@@ -855,7 +855,7 @@
     {
       "id": "gear.confliction-gauntlets",
       "title": "Confliction gauntlets",
-      "type": "other",
+      "type": "item",
       "icon": "Confliction_gauntlets.png",
       "link": "https://oldschool.runescape.wiki/w/Confliction_gauntlets",
       "children": []
@@ -863,7 +863,7 @@
     {
       "id": "gear.toxic-blowpipe",
       "title": "Toxic blowpipe",
-      "type": "other",
+      "type": "item",
       "icon": "Toxic_blowpipe.png",
       "link": "https://oldschool.runescape.wiki/w/Toxic_blowpipe",
       "children": []
@@ -871,7 +871,7 @@
     {
       "id": "gear.osmumten-s-fang",
       "title": "Osmumten's fang",
-      "type": "other",
+      "type": "item",
       "icon": "Osmumten's_fang.png",
       "link": "https://oldschool.runescape.wiki/w/Osmumten's_fang",
       "children": []
@@ -879,7 +879,7 @@
     {
       "id": "gear.ferocious-gloves",
       "title": "Ferocious gloves",
-      "type": "other",
+      "type": "item",
       "icon": "Ferocious_gloves.png",
       "link": "https://oldschool.runescape.wiki/w/Ferocious_gloves",
       "children": []
@@ -903,7 +903,7 @@
     {
       "id": "gear.infernal-cape",
       "title": "Infernal cape",
-      "type": "other",
+      "type": "item",
       "icon": "Infernal_cape.png",
       "link": "https://oldschool.runescape.wiki/w/Infernal_cape",
       "children": []
@@ -911,7 +911,7 @@
     {
       "id": "gear.oathplate-chest",
       "title": "Oathplate chest",
-      "type": "other",
+      "type": "item",
       "icon": "Oathplate_chest.png",
       "link": "https://oldschool.runescape.wiki/w/Oathplate_chest",
       "children": []
@@ -919,7 +919,7 @@
     {
       "id": "gear.oathplate-legs",
       "title": "Oathplate legs",
-      "type": "other",
+      "type": "item",
       "icon": "Oathplate_legs.png",
       "link": "https://oldschool.runescape.wiki/w/Oathplate_legs",
       "children": []
@@ -927,7 +927,7 @@
     {
       "id": "gear.oathplate-helm",
       "title": "Oathplate helm",
-      "type": "other",
+      "type": "item",
       "icon": "Oathplate_helm.png",
       "link": "https://oldschool.runescape.wiki/w/Oathplate_helm",
       "children": []
@@ -935,7 +935,7 @@
     {
       "id": "gear.ultor-ring",
       "title": "Ultor ring",
-      "type": "other",
+      "type": "item",
       "icon": "Ultor_ring.png",
       "link": "https://oldschool.runescape.wiki/w/Ultor_ring",
       "children": []
@@ -943,7 +943,7 @@
     {
       "id": "gear.dizana-s-quiver",
       "title": "Dizana's quiver",
-      "type": "other",
+      "type": "item",
       "icon": "Dizana's_quiver.png",
       "link": "https://oldschool.runescape.wiki/w/Dizana's_quiver",
       "children": []
@@ -951,7 +951,7 @@
     {
       "id": "gear.avernic-defender",
       "title": "Avernic defender",
-      "type": "other",
+      "type": "item",
       "icon": "Avernic_defender.png",
       "link": "https://oldschool.runescape.wiki/w/Avernic_defender",
       "children": []
@@ -959,7 +959,7 @@
     {
       "id": "gear.scythe-of-vitur",
       "title": "Scythe of vitur",
-      "type": "other",
+      "type": "item",
       "icon": "Scythe_of_vitur.png",
       "link": "https://oldschool.runescape.wiki/w/Scythe_of_vitur",
       "children": []
@@ -967,7 +967,7 @@
     {
       "id": "gear.tumeken-s-shadow",
       "title": "Tumeken's shadow",
-      "type": "other",
+      "type": "item",
       "icon": "Tumeken's_shadow.png",
       "link": "https://oldschool.runescape.wiki/w/Tumeken's_shadow",
       "children": []
@@ -975,7 +975,7 @@
     {
       "id": "gear.magus-ring",
       "title": "Magus ring",
-      "type": "other",
+      "type": "item",
       "icon": "Magus_ring.png",
       "link": "https://oldschool.runescape.wiki/w/Magus_ring",
       "children": []
@@ -983,7 +983,7 @@
     {
       "id": "gear.twisted-bow",
       "title": "Twisted bow",
-      "type": "other",
+      "type": "item",
       "icon": "Twisted_bow.png",
       "link": "https://oldschool.runescape.wiki/w/Twisted_bow",
       "children": []
@@ -991,7 +991,7 @@
     {
       "id": "gear.dragon-claws",
       "title": "Dragon claws",
-      "type": "other",
+      "type": "item",
       "icon": "Dragon_claws.png",
       "link": "https://oldschool.runescape.wiki/w/Dragon_claws",
       "children": []
@@ -999,7 +999,7 @@
     {
       "id": "gear.ancestral-robe-top",
       "title": "Ancestral robe top",
-      "type": "other",
+      "type": "item",
       "icon": "Ancestral_robe_top.png",
       "link": "https://oldschool.runescape.wiki/w/Ancestral_robe_top",
       "children": []
@@ -1007,7 +1007,7 @@
     {
       "id": "gear.ancestral-robe-bottom",
       "title": "Ancestral robe bottom",
-      "type": "other",
+      "type": "item",
       "icon": "Ancestral_robe_bottom.png",
       "link": "https://oldschool.runescape.wiki/w/Ancestral_robe_bottom",
       "children": []
@@ -1015,7 +1015,7 @@
     {
       "id": "gear.ancestral-hat",
       "title": "Ancestral hat",
-      "type": "other",
+      "type": "item",
       "icon": "Ancestral_hat.png",
       "link": "https://oldschool.runescape.wiki/w/Ancestral_hat",
       "children": []
@@ -1023,7 +1023,7 @@
     {
       "id": "gear.elder-maul",
       "title": "Elder maul",
-      "type": "other",
+      "type": "item",
       "icon": "Elder_maul.png",
       "link": "https://oldschool.runescape.wiki/w/Elder_maul",
       "children": []
@@ -1031,7 +1031,7 @@
     {
       "id": "gear.masori-body-f",
       "title": "Masori body (f)",
-      "type": "other",
+      "type": "item",
       "icon": "Masori_body_(f).png",
       "link": "https://oldschool.runescape.wiki/w/Masori_body_(f)",
       "children": []
@@ -1039,7 +1039,7 @@
     {
       "id": "gear.masori-chaps-f",
       "title": "Masori chaps (f)",
-      "type": "other",
+      "type": "item",
       "icon": "Masori_chaps_(f).png",
       "link": "https://oldschool.runescape.wiki/w/Masori_chaps_(f)",
       "children": []
@@ -1047,7 +1047,7 @@
     {
       "id": "gear.masori-mask-f",
       "title": "Masori mask (f)",
-      "type": "other",
+      "type": "item",
       "icon": "Masori_mask_(f).png",
       "link": "https://oldschool.runescape.wiki/w/Masori_mask_(f)",
       "children": []
@@ -1055,7 +1055,7 @@
     {
       "id": "gear.elidinis-ward",
       "title": "Elidinis' ward",
-      "type": "other",
+      "type": "item",
       "icon": "Elidinis'_ward.png",
       "link": "https://oldschool.runescape.wiki/w/Elidinis'_ward",
       "children": []
@@ -1063,7 +1063,7 @@
     {
       "id": "gear.saturated-heart",
       "title": "Saturated heart",
-      "type": "other",
+      "type": "item",
       "icon": "Saturated_heart.png",
       "link": "https://oldschool.runescape.wiki/w/Saturated_heart",
       "children": []
@@ -1071,7 +1071,7 @@
     {
       "id": "gear.zaryte-crossbow",
       "title": "Zaryte crossbow",
-      "type": "other",
+      "type": "item",
       "icon": "Zaryte_crossbow.png",
       "link": "https://oldschool.runescape.wiki/w/Zaryte_crossbow",
       "children": []
@@ -1079,7 +1079,7 @@
     {
       "id": "gear.zaryte-vambraces",
       "title": "Zaryte vambraces",
-      "type": "other",
+      "type": "item",
       "icon": "Zaryte_vambraces.png",
       "link": "https://oldschool.runescape.wiki/w/Zaryte_vambraces",
       "children": []

@@ -184,6 +184,45 @@ test("addLinkedChild rejects a cycle", () => {
   assert.strictEqual(r.ok, false);
 });
 
+test("a custom sub-goal is promoted to top-level when its parent goal leaves the template", () => {
+  // Regression: switching/trimming a template must never silently lose a custom
+  // sub-goal whose parent goal is no longer in the template.
+  const r = inCtx(`
+    Templates.applyTemplate(Templates.FULL_TEMPLATE_ID);
+    addCustomChild("piety", "Sub", { type: "quest" });
+    const subId = Object.keys(state.customNodes).find(id => state.customNodes[id].title === "Sub");
+    addCustomChild(subId, "Nested", { type: "quest" });
+    const nestedId = Object.keys(state.customNodes).find(id => state.customNodes[id].title === "Nested");
+    Templates.applyTemplate("ladlor"); // ladlor has gear.* only, no "piety" tree node
+    const g = getGraph().nodes;
+    return {
+      subRendered: !!g[subId],
+      subTopLevel: g[subId] ? g[subId].parentIds.length === 0 : null,
+      nestedUnderSub: g[nestedId] ? g[nestedId].parentIds.includes(subId) : false,
+      parentKept: state.customNodes[subId].parentId
+    };
+  `);
+  assert.strictEqual(r.subRendered, true, "orphaned custom sub-goal still renders");
+  assert.strictEqual(r.subTopLevel, true, "it is promoted to a top-level goal");
+  assert.strictEqual(r.nestedUnderSub, true, "its own custom child stays nested under it");
+  assert.strictEqual(r.parentKept, "piety", "its parentId is preserved so re-adding the parent re-nests it");
+});
+
+test("a custom sub-goal of a user-removed built-in parent still cascade-hides (not promoted)", () => {
+  const r = inCtx(`
+    Templates.applyTemplate(Templates.FULL_TEMPLATE_ID);
+    addCustomChild("piety", "Child", { type: "quest" });
+    const cid = Object.keys(state.customNodes).find(id => state.customNodes[id].title === "Child");
+    const before = !!getGraph().nodes[cid];
+    state.removed["piety"] = true; // the parent is still in the template, just hidden
+    const after = !!getGraph().nodes[cid];
+    Templates.applyTemplate("ladlor");
+    return { before, after };
+  `);
+  assert.strictEqual(r.before, true, "the custom child shows while its parent is present");
+  assert.strictEqual(r.after, false, "hiding the built-in parent cascade-hides its custom child");
+});
+
 console.log("\nDefault save (new profiles)");
 
 test("a new Ladlor profile shows only the web-page gear, nothing hidden", () => {
@@ -627,6 +666,139 @@ test("a template update leaves groups it did not change untouched", () => {
     return { sameGroup: getGroupOf("a") !== null && getGroupOf("a") === getGroupOf("b") };
   `);
   assert.strictEqual(r.sameGroup, true, "the unchanged [a,b] group survives the update");
+});
+
+test("mergeTemplateUpdateBase keeps base-only goals, adopts template field changes, adds new template goals", () => {
+  const r = JSON.parse(vm.runInContext(`JSON.stringify((function(){
+    const oldBase = {
+      goalData: [
+        { id: "a", title: "A old", type: "other", children: [] },
+        { id: "extra", title: "Extra", type: "other", children: [ { id: "extra.kid", title: "Kid", type: "other", children: [] } ] }
+      ],
+      gearGroups: [ ["a", "extra"] ]
+    };
+    const tpl = {
+      goalData: [ { id: "a", title: "A new", type: "item", children: [] }, { id: "b", title: "B", type: "item", children: [] } ],
+      gearGroups: [ ["a", "b"] ]
+    };
+    return mergeTemplateUpdateBase(oldBase, tpl);
+  })())`, ctx));
+  const byId = {}; r.goalData.forEach(n => byId[n.id] = n);
+  assert.ok(byId.a && byId.b && byId.extra, "keeps base extra + adds the new template goal");
+  assert.strictEqual(byId.a.title, "A new", "adopts the template's updated title for a shared id");
+  assert.strictEqual(byId.a.type, "item", "adopts the template's type change (other -> item)");
+  assert.ok(byId.extra.children.length === 1 && byId.extra.children[0].id === "extra.kid", "a base-only sub-tree is preserved intact");
+});
+
+test("applyTemplateUpdate preserves base sub-trees the template omits and custom nodes under them", () => {
+  // Regression for the TuuxSolo data loss: updating a profile whose base is a
+  // superset of the template must not wipe the extra goals (a merged full sub-tree)
+  // nor orphan custom goals hung off them.
+  const r = inCtx(`
+    const t = Templates.addUserTemplate({ name: "Upd", goalData: [ { id: "a", title: "A", type: "quest", children: [] } ], gearGroups: [] });
+    createProfile("UpdP", t.id);
+    const pid = profilesMeta.activeId;
+    // Simulate a merged/superset base: a sub-tree the template does not contain.
+    const base = loadTemplateBase(pid);
+    base.goalData.push({ id: "tree", title: "Tree", type: "quest", children: [ { id: "tree.leaf", title: "Leaf", type: "quest", children: [] } ] });
+    saveTemplateBase(pid, base);
+    applyProfileTemplate(pid); render();
+    addCustomChild("tree.leaf", "MyCustom", { type: "quest" });
+    const cid = Object.keys(state.customNodes).find(id => state.customNodes[id].title === "MyCustom");
+    render(); saveState();
+    // A new template version (still without "tree") adds goal "b".
+    Templates.updateUserTemplate(t.id, { name: "Upd", goalData: [ { id: "a", title: "A", type: "quest", children: [] }, { id: "b", title: "B", type: "quest", children: [] } ], gearGroups: [] });
+    applyTemplateUpdate(pid);
+    const g = getGraph().nodes;
+    const res = { treeThere: !!g["tree"], leafThere: !!g["tree.leaf"],
+      customUnderLeaf: g[cid] ? g[cid].parentIds.includes("tree.leaf") : false, bAdded: !!g["b"] };
+    Templates.removeUserTemplate(t.id);
+    Templates.applyTemplate("ladlor");
+    return res;
+  `);
+  assert.strictEqual(r.treeThere, true, "the base-only sub-tree survives the update");
+  assert.strictEqual(r.leafThere, true, "its nested goal survives");
+  assert.strictEqual(r.customUnderLeaf, true, "a custom goal stays nested under the preserved sub-tree");
+  assert.strictEqual(r.bAdded, true, "the template's new goal is still added");
+});
+
+console.log("\nBank memory sync");
+
+test("normalizeItemName drops (number) charge suffixes but keeps (letters) variants", () => {
+  const r = inCtx(`
+    return {
+      glory: normalizeItemName("Amulet of glory(6)"),
+      glorySpace: normalizeItemName("Amulet of glory (6)"),
+      salve: normalizeItemName("Salve amulet(ei)"),
+      iban: normalizeItemName("Iban's staff (u)"),
+      karamja: normalizeItemName("Karamja gloves 4")
+    };
+  `);
+  assert.strictEqual(r.glory, "amulet of glory", "(6) charge suffix stripped");
+  assert.strictEqual(r.glorySpace, "amulet of glory", "space before (6) collapsed away");
+  assert.strictEqual(r.salve, "salve amulet(ei)", "(ei) letter variant kept");
+  assert.strictEqual(r.iban, "iban's staff (u)", "(u) letter variant kept");
+  assert.strictEqual(r.karamja, "karamja gloves 4", "un-parenthesized number untouched");
+});
+
+test("parseBankMemory reads tab rows, skips the header, sums quantities", () => {
+  const r = inCtx(`
+    const bank = parseBankMemory([
+      "Item id\\tItem name\\tItem quantity",
+      "556\\tAir rune\\t477",
+      "555\\tWater rune\\t12324",
+      "",
+      "563\\tLaw rune\\t1645"
+    ].join("\\n"));
+    return { air: bank["air rune"], water: bank["water rune"], law: bank["law rune"], keys: Object.keys(bank).length };
+  `);
+  assert.strictEqual(r.air, 477, "air rune quantity parsed");
+  assert.strictEqual(r.water, 12324, "water rune quantity parsed");
+  assert.strictEqual(r.law, 1645, "law rune quantity parsed");
+  assert.strictEqual(r.keys, 3, "header and blank line skipped");
+});
+
+test("applyBankSync completes only item goals present in the bank, never unchecks", () => {
+  const r = inCtx(`
+    state.bank = { "air rune": 477, "rune pouch": 1 };
+    currentNodes = {
+      a: { id: "a", title: "Air rune", type: "item" },
+      b: { id: "b", title: "Rune pouch", type: "item" },
+      c: { id: "c", title: "Air rune", type: "other" },
+      d: { id: "d", title: "Fire rune", type: "item" }
+    };
+    const changed = applyBankSync();
+    return { changed, a: !!state.done.a, b: !!state.done.b, c: !!state.done.c, d: !!state.done.d };
+  `);
+  assert.strictEqual(r.changed, 2, "two item goals completed");
+  assert.strictEqual(r.a, true, "item in bank is completed");
+  assert.strictEqual(r.b, true, "second item in bank is completed");
+  assert.strictEqual(r.c, false, "same-name non-item goal is left alone");
+  assert.strictEqual(r.d, false, "item absent from the bank stays incomplete");
+});
+
+test("state.bank defaults to {} and round-trips through loadState", () => {
+  const r = inCtx(`
+    const def = defaultState().bank;
+    const key = storageKeyFor(profilesMeta.activeId);
+    localStorage.setItem(key, JSON.stringify({ done: {}, bank: { "air rune": 477 } }));
+    const loaded = loadState();
+    localStorage.removeItem(key);
+    return { defIsObj: def && typeof def === "object" && Object.keys(def).length === 0, air: loaded.bank["air rune"] };
+  `);
+  assert.strictEqual(r.defIsObj, true, "defaultState seeds an empty bank");
+  assert.strictEqual(r.air, 477, "a saved bank survives load");
+});
+
+test("applyBankSync matches a (6)-charge bank entry to a plain item goal title", () => {
+  const r = inCtx(`
+    state.bank = parseBankMemory("1704\\tAmulet of glory(6)\\t3");
+    currentNodes = { g: { id: "g", title: "Amulet of glory", type: "item" } };
+    const changed = applyBankSync();
+    return { changed, g: !!state.done.g };
+  `);
+  assert.strictEqual(r.changed, 1, "charge-suffixed bank item matches the plain goal");
+  assert.strictEqual(r.g, true, "goal completed");
 });
 
 console.log("\n" + passed + " test(s) passed.");

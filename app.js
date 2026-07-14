@@ -126,6 +126,9 @@ function defaultState() {
   return {
     done: {}, order: {}, customNodes: {}, linkedEdges: {}, removedEdges: {},
     collapsed: {}, overrides: {}, removed: {}, username: "",
+    // Uploaded bank memory: { normalizedItemName: quantity }. Used to auto-complete
+    // "item" goals by name. No node ids, so it needs no migration remap.
+    bank: {},
     // Built-in goals detached from every parent, promoted to standalone
     // top-level goals (kept alive past pruneRemoved). Keyed by node id.
     rootGoals: {},
@@ -151,7 +154,8 @@ function loadState() {
       removed: parsed.removed || {},
       username: parsed.username || "",
       rootGoals: parsed.rootGoals || {},
-      groupsState: parsed.groupsState || null
+      groupsState: parsed.groupsState || null,
+      bank: parsed.bank || {}
     });
   } catch (e) {
     console.error("Failed to load tracker state", e);
@@ -353,15 +357,18 @@ function getEffectiveTree() {
   });
 
   // Attach each custom node to its parent (a static node, a `shared` key, or
-  // another custom node), or make it a top-level goal if it has no parent. A
-  // node whose named parent no longer exists is dropped.
+  // another custom node). A custom node whose parent goal is absent from the
+  // current template (e.g. after a template swap/trim that dropped the parent) is
+  // promoted to a top-level goal rather than dropped, so switching templates can
+  // never silently lose a custom sub-goal. Its parentId is kept, so re-adding the
+  // parent (switching the template back) re-nests it. A parentless custom goal is
+  // likewise a top-level goal.
   Object.values(state.customNodes).forEach(custom => {
     const node = customObjs[custom.id];
     let parent = byId[custom.parentId];
     if (!parent && byShared[custom.parentId] && byShared[custom.parentId].length) {
       parent = byShared[custom.parentId][0];
     }
-    if (!parent && custom.parentId) return;
     if (parent) {
       if (!parent.children) parent.children = [];
       parent.children.push(node);
@@ -2581,8 +2588,15 @@ function addCustomChild(parentId, title, opts) {
   });
 }
 
+// Types whose icon/link come from a fuzzy wiki search rather than a deterministic
+// rule. "item" behaves exactly like "other" here (it only differs by being bank-
+// auto-completable), so both preserve a curated icon/link unless an override is typed.
+function isWikiSearchType(type) {
+  return type === "other" || type === "item";
+}
+
 // Resolves icon/link for a node and persists the result, keyed off `type`:
-// skill and quest are deterministic (no network); "other" uses a wiki search.
+// skill and quest are deterministic (no network); "other"/"item" use a wiki search.
 // `isCustom` picks state.customNodes vs state.overrides as the write target.
 function resolveAndStoreIconLink(id, isCustom, type, iconQuery, linkQuery) {
   const target = isCustom ? state.customNodes[id] : (state.overrides[id] = state.overrides[id] || {});
@@ -2653,10 +2667,11 @@ function saveGoalEdit(id, fields) {
     // an explicit override; custom goals always re-resolve.
     const hadIcon = !!(node.iconUrl || (typeof resolveIconFile === "function" && resolveIconFile(node)));
     const hadLink = !!node.link;
-    const iconQuery = fields.type !== "other" ? (fields.iconQuery || fields.title)
+    const wikiSearch = isWikiSearchType(fields.type);
+    const iconQuery = !wikiSearch ? (fields.iconQuery || fields.title)
       : fields.iconQuery || (isCustom || !hadIcon || typeChanged ? fields.title : "");
     const linkQuery = fields.linkDisabled ? null
-      : fields.type !== "other" ? (fields.linkQuery || fields.title)
+      : !wikiSearch ? (fields.linkQuery || fields.title)
       : fields.linkQuery || (isCustom || !hadLink || typeChanged ? fields.title : "");
     resolveAndStoreIconLink(id, isCustom, fields.type, iconQuery, linkQuery);
   });
@@ -2798,6 +2813,7 @@ let profileNameMode = "new"; // "new" | "rename"
 const POPOVERS = [
   ["profileMenuBtn", "profileMenu"],
   ["syncMenuBtn", "syncMenu"],
+  ["bankMenuBtn", "bankMenu"],
 ];
 function closeAllPopovers(exceptMenu) {
   for (const [btnId, menuId] of POPOVERS) {
@@ -2917,6 +2933,11 @@ profileExportBtnEl.addEventListener("click", () => {
     version: 1,
     name,
     templateId: templateIdFor(profilesMeta.activeId),
+    // The pinned base snapshot: without it, importing a profile whose base was
+    // customized/merged (a superset of the live template) would re-trim it to the
+    // live template and drop those extra goals. null for internal (__full__)
+    // profiles, which render the live tree and store no base.
+    templateBase: loadTemplateBase(profilesMeta.activeId),
     exportedAt: new Date().toISOString(),
     state
   };
@@ -2949,7 +2970,14 @@ profileImportInputEl.addEventListener("change", async () => {
     const t = Templates.getTemplate(payload.templateId) || Templates.getTemplate(Templates.DEFAULT_TEMPLATE_ID);
     const tpl = t.id;
     profilesMeta.profiles[id] = { name, templateId: tpl, templateVersion: t.version || 1 };
-    if (!t.internal) saveTemplateBase(id, t);
+    // Restore the exported base snapshot when present (preserves a customized/
+    // merged base); otherwise fall back to the live template content (files that
+    // predate base export). Internal templates (__full__) render the live tree.
+    if (!t.internal) {
+      const exportedBase = payload.templateBase && Array.isArray(payload.templateBase.goalData)
+        ? payload.templateBase : t;
+      saveTemplateBase(id, exportedBase);
+    }
     profilesMeta.activeId = id;
     localStorage.setItem(storageKeyFor(id), JSON.stringify(migrated));
     saveProfilesMeta();
@@ -3108,12 +3136,38 @@ function reconcileGroupsFromTemplate(oldGears, newGears) {
   addNewTemplateGroups();
 }
 
+// Fold a template update into a profile's base WITHOUT dropping goals the base
+// has beyond the template. Goals the template also defines are replaced by the
+// template's copy in place (so field changes like a new type or icon are adopted
+// and order is preserved); goals only the base has (e.g. a full sub-tree the user
+// merged in, or their own additions) are kept; brand-new template goals are
+// appended. Groups are unioned by member signature. Without this, updating a
+// profile whose base is a superset of the template (a merged base) would wipe
+// everything the template omits — silently deleting sub-trees and orphaning any
+// custom goals hung off them.
+function mergeTemplateUpdateBase(oldBase, tpl) {
+  const clone = v => JSON.parse(JSON.stringify(v));
+  const tplById = {};
+  (function walk(list) { (list || []).forEach(n => { if (n && n.id) { tplById[n.id] = n; walk(n.children); } }); })(tpl.goalData);
+  const baseIds = flattenTemplateIds(oldBase);
+  const goalData = ((oldBase && oldBase.goalData) || [])
+    .map(n => (n && n.id && tplById[n.id]) ? clone(tplById[n.id]) : clone(n));
+  ((tpl && tpl.goalData) || []).forEach(n => { if (n && n.id && !baseIds[n.id]) goalData.push(clone(n)); });
+  // Groups follow the template: the tier layout is the template's, and the user's
+  // own group edits live in state.groupsState (reconcileGroupsFromTemplate applies
+  // template group add/removes to it). Unioning here would resurrect a group the
+  // template just dropped, so take the template's gearGroups as-is.
+  const gearGroups = ((tpl && tpl.gearGroups) || []).map(g => g.slice());
+  return { goalData, gearGroups };
+}
+
 function applyTemplateUpdate(profileId) {
   const p = profilesMeta.profiles[profileId];
   const t = Templates.getTemplate(p && p.templateId);
   if (!p || !t) return;
   const oldBase = loadTemplateBase(profileId) || { goalData: [], gearGroups: [] };
-  saveTemplateBase(profileId, t);
+  const newBase = mergeTemplateUpdateBase(oldBase, t);
+  saveTemplateBase(profileId, newBase);
   p.templateVersion = t.version || 1;
   delete p.dismissedVersion;
   saveProfilesMeta();
@@ -3594,6 +3648,59 @@ function applySkillSync(levels) {
   return changed;
 }
 
+// --- Bank memory sync -----------------------------------------------------------
+// A RuneLite "bank memory" export (Item id / Item name / Item quantity rows) auto-
+// completes "item" goals by name. Matching is name-only: the source item id is not a
+// real OSRS id on our goals, so the name is the bridge. A "(number)" charge suffix is
+// dropped so "Amulet of glory(6)" matches goal "Amulet of glory", but a "(letters)"
+// suffix is kept so variants like "Salve amulet(ei)" stay distinct.
+function normalizeItemName(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/\(\d+\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Parse a bank export into { normalizedName: quantity }. Accepts tab- or comma-
+// separated rows; skips a header row and any row without a usable name. Quantity
+// defaults to 1 when absent/unparseable (presence is what matters for completion).
+function parseBankMemory(text) {
+  const bank = {};
+  String(text || "").split(/\r?\n/).forEach(line => {
+    const raw = line.trim();
+    if (!raw) return;
+    const cols = (raw.indexOf("\t") >= 0 ? raw.split("\t") : raw.split(",")).map(c => c.trim());
+    if (cols.length < 2) return;
+    // Rows are "id, name, qty". If the first cell is not numeric it is a header
+    // ("Item id") or a name-first export; detect which by whether a numeric id leads.
+    const idLeads = /^\d+$/.test(cols[0]);
+    const name = idLeads ? cols[1] : cols[0];
+    const qtyRaw = idLeads ? cols[2] : cols[1];
+    if (!name || /^item\s*(id|name)$/i.test(name)) return;
+    const key = normalizeItemName(name);
+    if (!key) return;
+    const qty = parseInt(String(qtyRaw).replace(/[^\d-]/g, ""), 10);
+    bank[key] = (bank[key] || 0) + (Number.isFinite(qty) ? qty : 1);
+  });
+  return bank;
+}
+
+// Mark every not-done "item" goal whose name is in the bank (quantity >= 1) as done.
+// Only ever completes goals (never unchecks), mirroring applySkillSync. Returns the
+// number newly completed.
+function applyBankSync() {
+  let changed = 0;
+  Object.values(currentNodes).forEach(node => {
+    if (state.done[node.id] || node.type !== "item") return;
+    if ((state.bank[normalizeItemName(node.title)] || 0) >= 1) {
+      state.done[node.id] = true;
+      changed++;
+    }
+  });
+  return changed;
+}
+
 const rsnInputEl = document.getElementById("rsnInput");
 const syncStatsBtnEl = document.getElementById("syncStatsBtn");
 const syncStatusTextEl = document.getElementById("syncStatusText");
@@ -3631,6 +3738,54 @@ syncStatsBtnEl.addEventListener("click", async () => {
   } finally {
     syncStatsBtnEl.disabled = false;
   }
+});
+
+const bankFileInputEl = document.getElementById("bankFileInput");
+const bankPasteInputEl = document.getElementById("bankPasteInput");
+const bankApplyBtnEl = document.getElementById("bankApplyBtn");
+const bankStatusTextEl = document.getElementById("bankStatusText");
+
+// Read the pasted text, else the chosen file. Returns "" when neither is set.
+function readBankSource() {
+  const pasted = bankPasteInputEl.value.trim();
+  if (pasted) return Promise.resolve(pasted);
+  const file = bankFileInputEl.files && bankFileInputEl.files[0];
+  if (!file) return Promise.resolve("");
+  return file.text();
+}
+
+bankApplyBtnEl.addEventListener("click", async () => {
+  let text;
+  try { text = await readBankSource(); } catch (e) { text = ""; }
+  if (!text.trim()) {
+    bankStatusTextEl.textContent = "Choose a file or paste bank rows first";
+    bankStatusTextEl.className = "sync-status error";
+    return;
+  }
+  const parsed = parseBankMemory(text);
+  const count = Object.keys(parsed).length;
+  if (!count) {
+    bankStatusTextEl.textContent = "No item rows found in that input";
+    bankStatusTextEl.className = "sync-status error";
+    return;
+  }
+  const mode = (document.querySelector('input[name="bankMode"]:checked') || {}).value || "replace";
+  let changed = 0;
+  withUndo("Applied bank memory", () => {
+    if (mode === "add") {
+      Object.keys(parsed).forEach(k => { state.bank[k] = (state.bank[k] || 0) + parsed[k]; });
+    } else {
+      state.bank = parsed;
+    }
+    changed = applyBankSync();
+    saveState();
+    render();
+  });
+  bankFileInputEl.value = "";
+  bankPasteInputEl.value = "";
+  bankStatusTextEl.textContent = `Loaded ${count} item${count === 1 ? "" : "s"} — ` +
+    (changed ? `${changed} goal${changed === 1 ? "" : "s"} completed` : "no new goals completed");
+  bankStatusTextEl.className = "sync-status success";
 });
 
 window.addEventListener("error", e => {

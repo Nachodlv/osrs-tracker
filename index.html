@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Iron Tracker</title>
-<link rel="stylesheet" href="style.css?v=54" />
+<link rel="stylesheet" href="style.css?v=59" />
 </head>
 <body>
   <header class="topbar">
@@ -57,6 +57,21 @@
           <span id="syncStatusText" class="sync-status"></span>
         </div>
       </div>
+      <div class="popover-wrap bank-wrap">
+        <button id="bankMenuBtn" title="Auto-complete item goals from a bank memory export" aria-haspopup="true" aria-expanded="false">🎒 Upload bank</button>
+        <div id="bankMenu" class="popover popover-right" hidden>
+          <label class="popover-label" for="bankFileInput">Bank memory file</label>
+          <input id="bankFileInput" type="file" accept=".txt,.tsv,.csv" title="RuneLite bank export (Item id / Item name / Item quantity)" />
+          <label class="popover-label" for="bankPasteInput">…or paste rows</label>
+          <textarea id="bankPasteInput" rows="4" placeholder="556&#9;Air rune&#9;477&#10;554&#9;Fire rune&#9;1579"></textarea>
+          <div class="bank-mode" role="radiogroup" aria-label="How to apply the upload">
+            <label class="modal-checkbox-row"><input type="radio" name="bankMode" value="replace" checked /> Replace previous bank</label>
+            <label class="modal-checkbox-row"><input type="radio" name="bankMode" value="add" /> Add to current bank</label>
+          </div>
+          <button id="bankApplyBtn">Apply</button>
+          <span id="bankStatusText" class="sync-status"></span>
+        </div>
+      </div>
     </div>
 
     <div class="legend">
@@ -91,6 +106,7 @@
         <select id="goalTypeSelect">
           <option value="skill">Skill</option>
           <option value="quest">Quest</option>
+          <option value="item">Item</option>
           <option value="other" selected>Other</option>
         </select>
       </label>
@@ -214,9 +230,9 @@
     </div>
   </div>
 
-  <script src="migration.js?v=54"></script>
-  <script src="data.js?v=54"></script>
-  <script src="templates.js?v=54"></script>
-  <script src="app.js?v=54"></script>
+  <script src="migration.js?v=59"></script>
+  <script src="data.js?v=59"></script>
+  <script src="templates.js?v=59"></script>
+  <script src="app.js?v=59"></script>
 </body>
 </html>

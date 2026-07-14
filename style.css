@@ -348,6 +348,61 @@ h1 {
   color: var(--green);
 }
 
+#bankMenuBtn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+#bankMenuBtn:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+#bankMenu {
+  min-width: 260px;
+}
+
+#bankFileInput,
+#bankPasteInput {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#bankPasteInput {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.bank-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bank-mode .modal-checkbox-row {
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+/* .toolbar input sets flex: 1 and min-width: 180px, which would balloon the
+   radios; pin them back to a normal checkbox size. */
+.bank-mode .modal-checkbox-row input {
+  flex: 0 0 auto;
+  width: 14px;
+  min-width: 0;
+}
+
 .action-btn.auto-btn {
   cursor: default;
   color: #6fb8d9;
@@ -724,6 +779,7 @@ main#chart {
 
 .graph-node.type-skill { border-left-color: #6fae4a; }
 .graph-node.type-quest { border-left-color: #4a7fc9; }
+.graph-node.type-item { border-left-color: #c9a24a; }
 .graph-node.type-other { border-left-color: var(--gold); }
 
 .graph-node.status-done {
@@ -1514,7 +1570,9 @@ footer {
   .view-controls { flex-direction: column; }
   .view-controls button { width: 100%; padding: 9px 10px; }
   .sync-wrap { width: 100%; }
+  .bank-wrap { width: 100%; }
   #syncMenuBtn { width: 100%; padding: 9px 10px; }
+  #bankMenuBtn { width: 100%; padding: 9px 10px; }
   .popover.popover-right { right: auto; left: 0; width: 100%; box-sizing: border-box; }
 
   .legend { font-size: 0.65rem; gap: 8px; }

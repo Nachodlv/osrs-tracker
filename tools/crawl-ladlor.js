@@ -14,6 +14,11 @@
 //   node tools/crawl-ladlor.js --groups   # diff the live tier-group layout
 //                                          # against GEAR_GROUPS (add --emit to
 //                                          # print a suggested GEAR_GROUPS block).
+//   node tools/crawl-ladlor.js --retype-items
+//                                          # rewrite existing flat gear.* entries
+//                                          # from type "other" to "item" for ownable
+//                                          # items (per source metadata), so bank
+//                                          # memory uploads can auto-complete them.
 //
 // Live data now comes from the repo ladlorchart.com is generated from
 // (github.com/Madssb/InteractiveGearProg): its milestone-sequence-main.json +
@@ -196,7 +201,7 @@ function repoGroupsShape({ seq, meta }) {
       const slug = slugify(clean);
       const m = idx.get(canonId(clean)) || {};
       rendered.push(slug);
-      return { id: slug, title: clean, wiki: m.wikiUrl || "", icon: m.imgUrl || "" };
+      return { id: slug, title: clean, wiki: m.wikiUrl || "", icon: m.imgUrl || "", type: m.type || "" };
     }))
     .filter(g => g.length);
   return { groups, rendered };
@@ -311,17 +316,19 @@ async function fetchLiveGroups() {
   return res;
 }
 
-// A classified live member ({ slug, title, wiki, icon, canon }) mapped to what a
-// data.js goal needs. type mirrors data.js: skill-level requirements
-// ("69-slayer") are "skill", the rest of the tier gear is "other". icon is the
-// wiki image filename (data.js stores just the basename), link is the full wiki
-// url.
+// A classified live member ({ slug, title, wiki, icon, type, canon }) mapped to
+// what a data.js goal needs. type mirrors data.js: skill-level requirements
+// ("69-slayer") are "skill"; ownable gear (source metadata type "item") becomes
+// "item" so an uploaded bank memory can auto-complete it; everything else (prayers,
+// spells, construction/slayer unlocks) stays "other". icon is the wiki image
+// filename (data.js stores just the basename), link is the full wiki url.
 function goalFromMember(m) {
   const slug = m.slug;
+  const type = /^\d+-/.test(slug) ? "skill" : (m.type === "item" ? "item" : "other");
   return {
     id: "gear." + slug,
     title: m.title,
-    type: /^\d+-/.test(slug) ? "skill" : "other",
+    type: type,
     icon: m.icon ? decodeURIComponent(m.icon.split("/").pop()) : "",
     link: m.wiki
   };
@@ -405,7 +412,7 @@ async function computeGroupDrift() {
     return null;
   }
   const liveGroups = raw.groups.map(g => g.map(m => ({
-    slug: m.id, title: m.title, wiki: m.wiki, icon: m.icon, canon: canonId(m.id)
+    slug: m.id, title: m.title, wiki: m.wiki, icon: m.icon, type: m.type || "", canon: canonId(m.id)
   })));
   const renderedCanon = new Set((raw.rendered || []).map(canonId));
   const dataGroups = (GEAR_GROUPS || []).map(ids => ({ ids, canon: ids.map(canonId) }));
@@ -553,6 +560,38 @@ function applyNewGoals(plan, dataPath = path.join(ROOT, "data.js")) {
   return goals.length;
 }
 
+// Reconcile the `type` of existing flat gear.* entries with the source metadata:
+// rewrite `type: "other"` -> `type: "item"` for entries whose title is an ownable
+// item (source metadata type "item"), so an uploaded bank memory can auto-complete
+// them. Leaves prayers/spells/construction/slayer unlocks ("other") and skill-level
+// requirements ("skill") untouched. Pure text transform matching titles case- and
+// punctuation-insensitively; returns { src, count }. Exported for tests.
+function retypeItems(src, itemNames) {
+  const canon = t => String(t).toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const set = new Set((itemNames || []).map(canon));
+  let count = 0;
+  const out = src.replace(
+    /(id: "gear\.[a-z0-9-]+", title: ")([^"]*)(", type: ")other(")/g,
+    (m, pre, title, mid, post) => {
+      if (!set.has(canon(title))) return m;
+      count++;
+      return pre + title + mid + "item" + post;
+    }
+  );
+  return { src: out, count };
+}
+
+// Dev-only: fetch the source metadata and apply retypeItems to data.js in place.
+async function retypeItemsMode() {
+  const { meta } = await fetchRepoData();
+  const itemNames = Object.keys(meta).filter(k => meta[k] && meta[k].type === "item");
+  const dataPath = path.join(ROOT, "data.js");
+  const { src, count } = retypeItems(fs.readFileSync(dataPath, "utf8"), itemNames);
+  if (count) fs.writeFileSync(dataPath, src);
+  console.log(`Retyped ${count} gear entr${count === 1 ? "y" : "ies"} to type "item" ` +
+    `(from ${itemNames.length} source items). Rerun \`node tools/crawl-ladlor.js\` to regenerate the template.`);
+}
+
 // Append key=value to $GITHUB_OUTPUT so the workflow can branch on the result.
 function setOutput(key, value) {
   const f = process.env.GITHUB_OUTPUT;
@@ -675,11 +714,12 @@ async function ci() {
 // Exported for tests (test-crawl.js). The pure pieces, plan classification via
 // classifyGroups and the data.js writer applyNewGoals, run without a browser.
 module.exports = { classifyGroups, applyNewGoals, goalFromMember, canonId, pairGroups, splitStaleIds,
-  slugify, repoGroupsShape, repoTitleMap };
+  slugify, repoGroupsShape, repoTitleMap, retypeItems };
 
 if (require.main === module) {
   (async function main() {
     if (process.argv.includes("--ci")) return ci();
+    if (process.argv.includes("--retype-items")) return void await retypeItemsMode();
     if (process.argv.includes("--groups")) return void await groups(process.argv.includes("--emit"));
     const { GOAL_DATA } = generate();
     if (process.argv.includes("--check")) await check(GOAL_DATA);

@@ -47,7 +47,7 @@
       id: DEFAULT_TEMPLATE_ID,
       name: "Ironman Ladlord Chart",
       builtin: true,
-      version: 2,
+      version: 3,
       goalData: ladlorPageGoals(FULL_GOAL_DATA, FULL_GEAR_GROUPS),
       gearGroups: FULL_GEAR_GROUPS
     }

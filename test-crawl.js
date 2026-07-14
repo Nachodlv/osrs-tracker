@@ -5,7 +5,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { classifyGroups, applyNewGoals, canonId, splitStaleIds,
-  slugify, repoGroupsShape, repoTitleMap } = require("./tools/crawl-ladlor");
+  slugify, repoGroupsShape, repoTitleMap, goalFromMember, retypeItems } = require("./tools/crawl-ladlor");
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -195,6 +195,41 @@ const idMapOf = (...ids) => new Map(ids.map(id => [canonId(id), id]));
       "applyNewGoals: goal fields intact");
   }
   fs.rmSync(tmp, { force: true });
+}
+
+// 10. goalFromMember maps the source metadata type: ownable item -> "item",
+//     prayer/spell/etc. -> "other", numeric level requirement -> "skill".
+{
+  const item = goalFromMember({ slug: "dragon-scimitar", title: "Dragon scimitar", wiki: "w", icon: "https://img/Dragon_scimitar.png", type: "item" });
+  assert(item.type === "item" && item.id === "gear.dragon-scimitar" && item.icon === "Dragon_scimitar.png",
+    "goalFromMember: metadata item -> type item");
+  assert(goalFromMember({ slug: "piety", title: "Piety", wiki: "w", icon: "p", type: "prayer" }).type === "other",
+    "goalFromMember: prayer -> type other");
+  assert(goalFromMember({ slug: "ice-barrage", title: "Ice Barrage", wiki: "w", icon: "i", type: "spell" }).type === "other",
+    "goalFromMember: spell -> type other");
+  assert(goalFromMember({ slug: "69-slayer", title: "69 Slayer", wiki: "", icon: "", type: "" }).type === "skill",
+    "goalFromMember: level requirement -> type skill");
+}
+
+// 11. retypeItems flips only gear.* "other" entries whose title is an ownable item
+//     (case/punctuation-insensitive), leaving prayers ("other") and skills untouched.
+{
+  const src = [
+    'var GOAL_DATA = [',
+    '  { id: "gear.dragon-scimitar", title: "Dragon scimitar", type: "other", icon: "x.png", link: "l", children: [] },',
+    '  { id: "gear.piety", title: "Piety", type: "other", icon: "p.png", link: "l", children: [] },',
+    '  { id: "gear.69-slayer", title: "69 Slayer", type: "skill", icon: "", link: "", children: [] },',
+    '  { id: "gear.salve-amulet-ei", title: "Salve amulet(ei)", type: "other", icon: "s.png", link: "l", children: [] }',
+    "];"
+  ].join("\n");
+  const { src: out, count } = retypeItems(src, ["Dragon scimitar", "Salve amulet (ei)"]);
+  assert(count === 2, "retypeItems: two entries retyped");
+  assert(/gear\.dragon-scimitar", title: "Dragon scimitar", type: "item"/.test(out), "retypeItems: item flipped");
+  assert(/gear\.salve-amulet-ei", title: "Salve amulet\(ei\)", type: "item"/.test(out),
+    "retypeItems: punctuation/space-insensitive title match");
+  assert(/gear\.piety", title: "Piety", type: "other"/.test(out), "retypeItems: prayer left as other");
+  assert(/gear\.69-slayer", title: "69 Slayer", type: "skill"/.test(out), "retypeItems: skill untouched");
+  assert(retypeItems(out, ["Dragon scimitar", "Salve amulet (ei)"]).count === 0, "retypeItems: idempotent");
 }
 
 if (failed) { console.error(`\n${failed} test(s) failed.`); process.exitCode = 1; }
