@@ -537,6 +537,37 @@ test("applyTemplateUpdate re-pins the base snapshot and version, clearing dismis
   assert.strictEqual(r.hasBase, true, "writes the new base snapshot");
 });
 
+test("applyTemplateUpdate is reversible: undo rolls back the version pin and base snapshot", () => {
+  const r = inCtx(`
+    const id = "p-undo";
+    const oldBase = { goalData: [{ id: "keep", title: "Keep", children: [] }], gearGroups: [] };
+    profilesMeta.profiles[id] = { name: "Undo", templateId: "ladlor", templateVersion: 0, dismissedVersion: 0 };
+    saveTemplateBase(id, oldBase);
+    applyTemplateUpdate(id);
+    const afterVer = profilesMeta.profiles[id].templateVersion;
+    const afterBaseGoals = (loadTemplateBase(id).goalData || []).length;
+    performUndo();
+    const p = profilesMeta.profiles[id];
+    const base = loadTemplateBase(id);
+    const res = {
+      afterVer, afterBaseGoals,
+      undoneVer: p.templateVersion,
+      undoneDismissed: p.dismissedVersion,
+      undoneBaseGoals: (base.goalData || []).length,
+      undoneBaseId: base.goalData[0] && base.goalData[0].id
+    };
+    delete profilesMeta.profiles[id];
+    localStorage.removeItem(baseKeyFor(id));
+    return res;
+  `);
+  assert.ok(r.afterVer >= 1, "apply pins to the current template version");
+  assert.ok(r.afterBaseGoals > 1, "apply merges the template into the base");
+  assert.strictEqual(r.undoneVer, 0, "undo restores the old version pin");
+  assert.strictEqual(r.undoneDismissed, 0, "undo restores the dismissed-version flag");
+  assert.strictEqual(r.undoneBaseGoals, 1, "undo restores the old base snapshot");
+  assert.strictEqual(r.undoneBaseId, "keep", "old base content is exactly restored");
+});
+
 test("createProfile pins a base snapshot and version", () => {
   const r = inCtx(`
     createProfile("Pinned", "ladlor");
@@ -739,6 +770,22 @@ test("normalizeItemName drops (number) charge suffixes but keeps (letters) varia
   assert.strictEqual(r.salve, "salve amulet(ei)", "(ei) letter variant kept");
   assert.strictEqual(r.iban, "iban's staff (u)", "(u) letter variant kept");
   assert.strictEqual(r.karamja, "karamja gloves 4", "un-parenthesized number untouched");
+});
+
+test("normalizeItemName drops a leading Open so opened storage items match the plain goal", () => {
+  const r = inCtx(`
+    return {
+      gemBag: normalizeItemName("Open gem bag"),
+      plain: normalizeItemName("Gem bag"),
+      herbSack: normalizeItemName("Open herb sack"),
+      openTundra: normalizeItemName("Opal") // no space after "open" prefix, untouched
+    };
+  `);
+  assert.strictEqual(r.gemBag, "gem bag", '"Open gem bag" normalizes to "gem bag"');
+  assert.strictEqual(r.plain, "gem bag", "plain goal title normalizes the same way");
+  assert.strictEqual(r.gemBag, r.plain, "opened and closed variants match");
+  assert.strictEqual(r.herbSack, "herb sack", "leading Open dropped for other sacks");
+  assert.strictEqual(r.openTundra, "opal", "a word merely starting with 'open' is untouched");
 });
 
 test("parseBankMemory reads tab rows, skips the header, sums quantities", () => {

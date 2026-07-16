@@ -2926,20 +2926,27 @@ document.addEventListener("keydown", e => {
 // into a brand-new profile (running save-data migrations), so profiles can be
 // moved between browsers or kept as backups.
 
-profileExportBtnEl.addEventListener("click", () => {
-  const name = profilesMeta.profiles[profilesMeta.activeId].name;
+// Download a profile (its state + pinned template base) as an importable JSON
+// backup. Shared by the Export button and the template-update warning, so the
+// user can snapshot their progress before an update they might want to roll back.
+function exportProfile(profileId) {
+  const p = profilesMeta.profiles[profileId];
+  if (!p) return;
+  const name = p.name;
   const payload = {
     app: "iron-tracker",
     version: 1,
     name,
-    templateId: templateIdFor(profilesMeta.activeId),
+    templateId: templateIdFor(profileId),
     // The pinned base snapshot: without it, importing a profile whose base was
     // customized/merged (a superset of the live template) would re-trim it to the
     // live template and drop those extra goals. null for internal (__full__)
     // profiles, which render the live tree and store no base.
-    templateBase: loadTemplateBase(profilesMeta.activeId),
+    templateBase: loadTemplateBase(profileId),
     exportedAt: new Date().toISOString(),
-    state
+    state: profileId === profilesMeta.activeId
+      ? state
+      : JSON.parse(localStorage.getItem(storageKeyFor(profileId)) || "null")
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
@@ -2947,7 +2954,9 @@ profileExportBtnEl.addEventListener("click", () => {
   a.download = "iron-tracker-" + (name.replace(/[^\w-]+/g, "_") || "profile") + ".json";
   a.click();
   URL.revokeObjectURL(a.href);
-});
+}
+
+profileExportBtnEl.addEventListener("click", () => exportProfile(profilesMeta.activeId));
 
 profileImportBtnEl.addEventListener("click", () => profileImportInputEl.click());
 
@@ -3166,21 +3175,41 @@ function applyTemplateUpdate(profileId) {
   const t = Templates.getTemplate(p && p.templateId);
   if (!p || !t) return;
   const oldBase = loadTemplateBase(profileId) || { goalData: [], gearGroups: [] };
-  const newBase = mergeTemplateUpdateBase(oldBase, t);
-  saveTemplateBase(profileId, newBase);
-  p.templateVersion = t.version || 1;
-  delete p.dismissedVersion;
-  saveProfilesMeta();
-  if (profileId === profilesMeta.activeId) {
+
+  // The update is reversible: undo restores `state` (progress) and this closure
+  // rolls back the bits outside `state` the update touched — the version pin, the
+  // dismissed-version flag, and the stored base snapshot.
+  const beforeMeta = { templateVersion: p.templateVersion, dismissedVersion: p.dismissedVersion };
+  const restore = () => {
+    const pr = profilesMeta.profiles[profileId];
+    if (!pr) return;
+    pr.templateVersion = beforeMeta.templateVersion;
+    if (beforeMeta.dismissedVersion === undefined) delete pr.dismissedVersion;
+    else pr.dismissedVersion = beforeMeta.dismissedVersion;
+    saveTemplateBase(profileId, oldBase);
+    saveProfilesMeta();
     applyProfileTemplate(profileId);
-    render();  // rebuild currentNodes from the new template content
-    reconcileGroupsFromTemplate(oldBase.gearGroups, t.gearGroups);
-    saveState();
     render();
-  } else {
     renderTemplateBanner();
-  }
-  showToast(`Updated to "${t.name}" v${t.version || 1}`);
+  };
+
+  withUndo(`Updated to "${t.name}" v${t.version || 1}`, () => {
+    const newBase = mergeTemplateUpdateBase(oldBase, t);
+    saveTemplateBase(profileId, newBase);
+    p.templateVersion = t.version || 1;
+    delete p.dismissedVersion;
+    saveProfilesMeta();
+    if (profileId === profilesMeta.activeId) {
+      applyProfileTemplate(profileId);
+      render();  // rebuild currentNodes from the new template content
+      reconcileGroupsFromTemplate(oldBase.gearGroups, t.gearGroups);
+      saveState();
+      render();
+    } else {
+      renderTemplateBanner();
+    }
+  }, { force: true, restore });
+  renderTemplateBanner();
 }
 
 const templateChangesModalEl = document.getElementById("templateChangesModal");
@@ -3188,6 +3217,7 @@ const templateChangesBodyEl = document.getElementById("templateChangesBody");
 const templateChangesTitleEl = document.getElementById("templateChangesTitle");
 const templateChangesConfirmEl = document.getElementById("templateChangesConfirm");
 const templateChangesCancelEl = document.getElementById("templateChangesCancel");
+const templateChangesBackupEl = document.getElementById("templateChangesBackup");
 
 function closeTemplateChangesModal() { if (templateChangesModalEl) templateChangesModalEl.hidden = true; }
 
@@ -3229,6 +3259,7 @@ function openTemplateChangesModal(profileId) {
   }
 
   templateChangesConfirmEl.onclick = () => { applyTemplateUpdate(profileId); closeTemplateChangesModal(); };
+  if (templateChangesBackupEl) templateChangesBackupEl.onclick = () => exportProfile(profileId);
   templateChangesModalEl.hidden = false;
 }
 
@@ -3653,13 +3684,15 @@ function applySkillSync(levels) {
 // completes "item" goals by name. Matching is name-only: the source item id is not a
 // real OSRS id on our goals, so the name is the bridge. A "(number)" charge suffix is
 // dropped so "Amulet of glory(6)" matches goal "Amulet of glory", but a "(letters)"
-// suffix is kept so variants like "Salve amulet(ei)" stay distinct.
+// suffix is kept so variants like "Salve amulet(ei)" stay distinct. A leading "Open "
+// (the opened variant of a storage item) is dropped so "Open gem bag" matches "Gem bag".
 function normalizeItemName(name) {
   return String(name || "")
     .toLowerCase()
     .replace(/\(\d+\)/g, "")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .replace(/^open /, "");
 }
 
 // Parse a bank export into { normalizedName: quantity }. Accepts tab- or comma-

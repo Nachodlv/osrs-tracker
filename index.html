@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Iron Tracker</title>
-<link rel="stylesheet" href="style.css?v=59" />
+<link rel="stylesheet" href="style.css?v=60" />
 </head>
 <body>
   <header class="topbar">
@@ -48,6 +48,7 @@
         <button id="hideCompletedBtn">Hide completed</button>
         <button id="hideIncompleteBtn">Hide incomplete</button>
       </div>
+      <div class="toolbar-actions">
       <div class="popover-wrap sync-wrap">
         <button id="syncMenuBtn" title="Track skill goals from your OSRS hiscores" aria-haspopup="true" aria-expanded="false"><img class="btn-icon" src="https://oldschool.runescape.wiki/images/Skills_icon.png" alt="" aria-hidden="true" />Sync stats</button>
         <div id="syncMenu" class="popover popover-right" hidden>
@@ -58,7 +59,7 @@
         </div>
       </div>
       <div class="popover-wrap bank-wrap">
-        <button id="bankMenuBtn" title="Auto-complete item goals from a bank memory export" aria-haspopup="true" aria-expanded="false">🎒 Upload bank</button>
+        <button id="bankMenuBtn" title="Auto-complete item goals from a bank memory export" aria-haspopup="true" aria-expanded="false"><img class="btn-icon" src="https://oldschool.runescape.wiki/images/Inventory.png?d4795" alt="" aria-hidden="true" />Upload bank</button>
         <div id="bankMenu" class="popover popover-right" hidden>
           <label class="popover-label" for="bankFileInput">Bank memory file</label>
           <input id="bankFileInput" type="file" accept=".txt,.tsv,.csv" title="RuneLite bank export (Item id / Item name / Item quantity)" />
@@ -71,6 +72,7 @@
           <button id="bankApplyBtn">Apply</button>
           <span id="bankStatusText" class="sync-status"></span>
         </div>
+      </div>
       </div>
     </div>
 
@@ -223,16 +225,18 @@
       <h2 id="templateChangesTitle">Template update</h2>
       <p class="modal-body-text">These changes will be applied to your save. Your progress, hidden goals, and custom goals are kept.</p>
       <div id="templateChangesBody" class="template-changes-body"></div>
+      <p class="modal-body-text template-changes-warn">⚠️ You can undo this right after applying, but the undo is only available briefly. Download a backup of this profile first if you want to keep a copy of your current progress.</p>
       <div class="modal-actions">
+        <button type="button" id="templateChangesBackup">Download backup</button>
         <button type="button" id="templateChangesCancel">Cancel</button>
         <button type="button" id="templateChangesConfirm" class="primary">Update my save</button>
       </div>
     </div>
   </div>
 
-  <script src="migration.js?v=59"></script>
-  <script src="data.js?v=59"></script>
-  <script src="templates.js?v=59"></script>
-  <script src="app.js?v=59"></script>
+  <script src="migration.js?v=60"></script>
+  <script src="data.js?v=60"></script>
+  <script src="templates.js?v=60"></script>
+  <script src="app.js?v=60"></script>
 </body>
 </html>

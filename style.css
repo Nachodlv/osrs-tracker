@@ -175,6 +175,14 @@ h1 {
   flex-wrap: wrap;
 }
 
+/* Sync stats + Upload bank pushed together to the right edge of the toolbar. */
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
 .toolbar input,
 .toolbar button {
   background: var(--bg-card);
@@ -1494,6 +1502,15 @@ button.add-link:hover {
   line-height: 1.4;
 }
 
+.template-changes-warn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 8px 10px;
+  margin: 0 0 14px;
+  font-size: 0.82rem;
+}
+
 .remove-btn:hover {
   color: var(--red);
 }
@@ -1569,6 +1586,7 @@ footer {
   .toolbar { flex-direction: column; align-items: stretch; }
   .view-controls { flex-direction: column; }
   .view-controls button { width: 100%; padding: 9px 10px; }
+  .toolbar-actions { flex-direction: column; width: 100%; margin-left: 0; }
   .sync-wrap { width: 100%; }
   .bank-wrap { width: 100%; }
   #syncMenuBtn { width: 100%; padding: 9px 10px; }
