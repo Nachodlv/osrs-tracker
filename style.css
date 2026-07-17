@@ -475,7 +475,9 @@ h1 {
 
 main#chart {
   margin: 20px;
-  overflow: visible;
+  /* Scroll wide graphs here instead of the whole document, so the sticky
+     topbar stays pinned across the full width instead of scrolling off. */
+  overflow-x: auto;
 }
 
 .flow-area {
