@@ -850,6 +850,51 @@ test("applyBankSync matches a (6)-charge bank entry to a plain item goal title",
   assert.strictEqual(r.g, true, "goal completed");
 });
 
+test("applyQuestSync completes only quest goals in the finished set, never unchecks", () => {
+  const r = inCtx(`
+    const finished = new Set(["Cook's Assistant", "The Restless Ghost"].map(normalizeQuestName));
+    currentNodes = {
+      a: { id: "a", title: "Cook's Assistant", type: "quest" },
+      b: { id: "b", title: "The Restless Ghost", type: "quest" },
+      c: { id: "c", title: "Cook's Assistant", type: "other" },
+      d: { id: "d", title: "Dragon Slayer I", type: "quest" }
+    };
+    const changed = applyQuestSync(finished);
+    return { changed, a: !!state.done.a, b: !!state.done.b, c: !!state.done.c, d: !!state.done.d };
+  `);
+  assert.strictEqual(r.changed, 2, "two quest goals completed");
+  assert.strictEqual(r.a, true, "finished quest is completed");
+  assert.strictEqual(r.b, true, "second finished quest is completed");
+  assert.strictEqual(r.c, false, "same-name non-quest goal is left alone");
+  assert.strictEqual(r.d, false, "unfinished quest stays incomplete");
+});
+
+test("applyQuestSync matches quest names differing only in punctuation", () => {
+  const r = inCtx(`
+    const finished = new Set(["Between a Rock..."].map(normalizeQuestName));
+    currentNodes = { g: { id: "g", title: "Between a Rock...", type: "quest" } };
+    return { changed: applyQuestSync(finished), g: !!state.done.g };
+  `);
+  assert.strictEqual(r.changed, 1, "ellipsis/punctuation is normalized away");
+  assert.strictEqual(r.g, true, "goal completed");
+});
+
+test("state.skillSource defaults to hiscores and round-trips through loadState", () => {
+  const r = inCtx(`
+    const def = defaultState().skillSource;
+    const key = storageKeyFor(profilesMeta.activeId);
+    localStorage.setItem(key, JSON.stringify({ done: {}, skillSource: "runeprofile" }));
+    const good = loadState().skillSource;
+    localStorage.setItem(key, JSON.stringify({ done: {}, skillSource: "bogus" }));
+    const bad = loadState().skillSource;
+    localStorage.removeItem(key);
+    return { def, good, bad };
+  `);
+  assert.strictEqual(r.def, "hiscores", "defaultState uses hiscores");
+  assert.strictEqual(r.good, "runeprofile", "a saved runeprofile source survives load");
+  assert.strictEqual(r.bad, "hiscores", "an unknown source falls back to hiscores");
+});
+
 console.log("\n" + passed + " test(s) passed.");
 if (process.exitCode) console.error("Some app tests failed.");
 else console.log("All app tests passed.");

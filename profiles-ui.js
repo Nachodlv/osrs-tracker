@@ -30,6 +30,7 @@ let profileNameMode = "new"; // "new" | "rename"
 const POPOVERS = [
   ["profileMenuBtn", "profileMenu"],
   ["syncMenuBtn", "syncMenu"],
+  ["questMenuBtn", "questMenu"],
   ["bankMenuBtn", "bankMenu"],
 ];
 function closeAllPopovers(exceptMenu) {

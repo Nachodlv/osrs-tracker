@@ -126,6 +126,9 @@ function defaultState() {
   return {
     done: {}, order: {}, customNodes: {}, linkedEdges: {}, removedEdges: {},
     collapsed: {}, overrides: {}, removed: {}, username: "",
+    // Which source the "Sync stats" button pulls skill levels from:
+    // "hiscores" (official, no plugin needed) or "runeprofile" (RuneProfile plugin).
+    skillSource: "hiscores",
     // Uploaded bank memory: { normalizedItemName: quantity }. Used to auto-complete
     // "item" goals by name. No node ids, so it needs no migration remap.
     bank: {},
@@ -153,6 +156,7 @@ function loadState() {
       overrides: parsed.overrides || {},
       removed: parsed.removed || {},
       username: parsed.username || "",
+      skillSource: parsed.skillSource === "runeprofile" ? "runeprofile" : "hiscores",
       rootGoals: parsed.rootGoals || {},
       groupsState: parsed.groupsState || null,
       bank: parsed.bank || {}

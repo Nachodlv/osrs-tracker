@@ -94,15 +94,84 @@ function applyBankSync() {
   return changed;
 }
 
+// --- RuneProfile sync -----------------------------------------------------------
+// RuneProfile (RuneLite plugin + public API at api.runeprofile.com) exposes a
+// player's skills and per-quest completion by username, CORS-open so the browser
+// can call it directly (no proxy, unlike hiscores). Skills are an alternative
+// source for the stat sync; quests are the only source we have for per-quest
+// completion (the official hiscores expose only total quest points).
+const RUNEPROFILE_BASE = "https://api.runeprofile.com/v1";
+
+async function fetchRuneProfileJson(username, path) {
+  const url = `${RUNEPROFILE_BASE}/accounts/${encodeURIComponent(username)}/${path}`;
+  const res = await fetch(url);
+  if (res.status === 404) {
+    throw new Error("Account not found on RuneProfile (install the plugin and sync once)");
+  }
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* fall through */ }
+  if (!res.ok || !data || !Array.isArray(data.data)) {
+    throw new Error((data && data.error) || `Lookup failed (HTTP ${res.status})`);
+  }
+  return data.data;
+}
+
+// Returns a { skillName: level } map shaped like fetchHiscores, so applySkillSync
+// consumes either source unchanged.
+async function fetchRuneProfileSkills(username) {
+  const rows = await fetchRuneProfileJson(username, "skills");
+  const levels = {};
+  rows.forEach(s => { if (s && s.name && s.level != null) levels[s.name] = s.level; });
+  return levels;
+}
+
+// Normalize a quest name to a name-only key (punctuation, e.g. apostrophes and the
+// "Between a Rock..." ellipsis, differs harmlessly between our titles and RuneProfile).
+function normalizeQuestName(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+// Returns a Set of normalized names of quests RuneProfile reports as finished.
+async function fetchRuneProfileQuests(username) {
+  const rows = await fetchRuneProfileJson(username, "quests");
+  const finished = new Set();
+  rows.forEach(q => { if (q && q.state === "finished") finished.add(normalizeQuestName(q.name)); });
+  return finished;
+}
+
+// Mark every not-done "quest" goal whose name is in the finished set as done. Only
+// ever completes goals (never unchecks), mirroring applySkillSync. Returns the count.
+function applyQuestSync(finished) {
+  let changed = 0;
+  Object.values(currentNodes).forEach(node => {
+    if (state.done[node.id] || node.type !== "quest") return;
+    if (finished.has(normalizeQuestName(node.title))) {
+      state.done[node.id] = true;
+      changed++;
+    }
+  });
+  return changed;
+}
+
 const rsnInputEl = document.getElementById("rsnInput");
 const syncStatsBtnEl = document.getElementById("syncStatsBtn");
 const syncStatusTextEl = document.getElementById("syncStatusText");
 
-rsnInputEl.value = state.username || "";
-rsnInputEl.addEventListener("change", () => {
-  state.username = rsnInputEl.value.trim();
+// Reflect the saved skill source into the radio group on load.
+const savedSourceEl = document.querySelector(`input[name="skillSource"][value="${state.skillSource}"]`);
+if (savedSourceEl) savedSourceEl.checked = true;
+
+// The username is shared by the stats and quest popovers; keep both inputs in sync.
+function setUsername(value) {
+  state.username = value.trim();
+  if (rsnInputEl) rsnInputEl.value = state.username;
+  const q = document.getElementById("questRsnInput");
+  if (q) q.value = state.username;
   saveState();
-});
+}
+
+rsnInputEl.value = state.username || "";
+rsnInputEl.addEventListener("change", () => setUsername(rsnInputEl.value));
 
 syncStatsBtnEl.addEventListener("click", async () => {
   const username = rsnInputEl.value.trim();
@@ -111,13 +180,16 @@ syncStatsBtnEl.addEventListener("click", async () => {
     syncStatusTextEl.className = "sync-status error";
     return;
   }
-  state.username = username;
-  saveState();
+  const source = (document.querySelector('input[name="skillSource"]:checked') || {}).value || "hiscores";
+  state.skillSource = source;
+  setUsername(username);
   syncStatusTextEl.textContent = "Looking up…";
   syncStatusTextEl.className = "sync-status";
   syncStatsBtnEl.disabled = true;
   try {
-    const levels = await fetchHiscores(username);
+    const levels = source === "runeprofile"
+      ? await fetchRuneProfileSkills(username)
+      : await fetchHiscores(username);
     const changed = applySkillSync(levels);
     saveState();
     render();
@@ -130,6 +202,44 @@ syncStatsBtnEl.addEventListener("click", async () => {
     syncStatusTextEl.className = "sync-status error";
   } finally {
     syncStatsBtnEl.disabled = false;
+  }
+});
+
+const questRsnInputEl = document.getElementById("questRsnInput");
+const questSyncBtnEl = document.getElementById("questSyncBtn");
+const questStatusTextEl = document.getElementById("questStatusText");
+
+questRsnInputEl.value = state.username || "";
+questRsnInputEl.addEventListener("change", () => setUsername(questRsnInputEl.value));
+
+questSyncBtnEl.addEventListener("click", async () => {
+  const username = questRsnInputEl.value.trim();
+  if (!username) {
+    questStatusTextEl.textContent = "Enter a username first";
+    questStatusTextEl.className = "sync-status error";
+    return;
+  }
+  setUsername(username);
+  questStatusTextEl.textContent = "Looking up…";
+  questStatusTextEl.className = "sync-status";
+  questSyncBtnEl.disabled = true;
+  try {
+    const finished = await fetchRuneProfileQuests(username);
+    let changed = 0;
+    withUndo("Synced quests from RuneProfile", () => {
+      changed = applyQuestSync(finished);
+      saveState();
+      render();
+    });
+    questStatusTextEl.textContent = changed
+      ? `Synced — ${changed} quest goal${changed === 1 ? "" : "s"} completed`
+      : "Synced — no new goals completed";
+    questStatusTextEl.className = "sync-status success";
+  } catch (e) {
+    questStatusTextEl.textContent = e.message || "Sync failed";
+    questStatusTextEl.className = "sync-status error";
+  } finally {
+    questSyncBtnEl.disabled = false;
   }
 });
 

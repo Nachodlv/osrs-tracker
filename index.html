@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Iron Tracker</title>
-<link rel="stylesheet" href="style.css?v=62" />
+<link rel="stylesheet" href="style.css?v=63" />
 </head>
 <body>
   <header class="topbar">
@@ -54,8 +54,22 @@
         <div id="syncMenu" class="popover popover-right" hidden>
           <label class="popover-label" for="rsnInput">OSRS username</label>
           <input id="rsnInput" type="text" placeholder="OSRS username" title="Saved per-profile; used to auto-track skill goals" />
+          <div class="sync-source" role="radiogroup" aria-label="Skill data source">
+            <label class="modal-checkbox-row"><input type="radio" name="skillSource" value="hiscores" checked /> Hiscores</label>
+            <label class="modal-checkbox-row"><input type="radio" name="skillSource" value="runeprofile" /> RuneProfile</label>
+          </div>
           <button id="syncStatsBtn">Sync stats</button>
           <span id="syncStatusText" class="sync-status"></span>
+        </div>
+      </div>
+      <div class="popover-wrap quest-wrap">
+        <button id="questMenuBtn" title="Mark quest goals done from your RuneProfile" aria-haspopup="true" aria-expanded="false"><img class="btn-icon" src="https://oldschool.runescape.wiki/images/Quest_point_icon.png" alt="" aria-hidden="true" />Sync quests</button>
+        <div id="questMenu" class="popover popover-right" hidden>
+          <label class="popover-label" for="questRsnInput">OSRS username</label>
+          <input id="questRsnInput" type="text" placeholder="OSRS username" title="Uses your RuneProfile data" />
+          <button id="questSyncBtn">Sync quests</button>
+          <span id="questStatusText" class="sync-status"></span>
+          <p class="popover-note">Needs the <a href="https://www.runeprofile.com/" target="_blank" rel="noopener">RuneProfile</a> RuneLite plugin, synced at least once.</p>
         </div>
       </div>
       <div class="popover-wrap bank-wrap">
@@ -234,18 +248,18 @@
     </div>
   </div>
 
-  <script src="migration.js?v=62"></script>
-  <script src="data.js?v=62"></script>
-  <script src="templates.js?v=62"></script>
-  <script src="state.js?v=62"></script>
-  <script src="graph.js?v=62"></script>
-  <script src="render.js?v=62"></script>
-  <script src="dragdrop.js?v=62"></script>
-  <script src="edges-menu.js?v=62"></script>
-  <script src="modals.js?v=62"></script>
-  <script src="profiles-ui.js?v=62"></script>
-  <script src="templates-ui.js?v=62"></script>
-  <script src="sync.js?v=62"></script>
-  <script src="app.js?v=62"></script>
+  <script src="migration.js?v=63"></script>
+  <script src="data.js?v=63"></script>
+  <script src="templates.js?v=63"></script>
+  <script src="state.js?v=63"></script>
+  <script src="graph.js?v=63"></script>
+  <script src="render.js?v=63"></script>
+  <script src="dragdrop.js?v=63"></script>
+  <script src="edges-menu.js?v=63"></script>
+  <script src="modals.js?v=63"></script>
+  <script src="profiles-ui.js?v=63"></script>
+  <script src="templates-ui.js?v=63"></script>
+  <script src="sync.js?v=63"></script>
+  <script src="app.js?v=63"></script>
 </body>
 </html>

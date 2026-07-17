@@ -356,7 +356,7 @@ h1 {
   color: var(--green);
 }
 
-#bankMenuBtn {
+#bankMenuBtn, #questMenuBtn {
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text);
@@ -366,7 +366,7 @@ h1 {
   cursor: pointer;
 }
 
-#bankMenuBtn:hover {
+#bankMenuBtn:hover, #questMenuBtn:hover {
   border-color: var(--gold);
   color: var(--gold-bright);
 }
@@ -414,23 +414,30 @@ h1 {
   font-family: inherit;
 }
 
-.bank-mode {
+.bank-mode, .sync-source {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.bank-mode .modal-checkbox-row {
+.bank-mode .modal-checkbox-row, .sync-source .modal-checkbox-row {
   font-size: 0.8rem;
   margin: 0;
 }
 
 /* .toolbar input sets flex: 1 and min-width: 180px, which would balloon the
    radios; pin them back to a normal checkbox size. */
-.bank-mode .modal-checkbox-row input {
+.bank-mode .modal-checkbox-row input, .sync-source .modal-checkbox-row input {
   flex: 0 0 auto;
   width: 14px;
   min-width: 0;
+}
+
+.popover-note {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin: 2px 0 0;
+  line-height: 1.35;
 }
 
 .action-btn.auto-btn {
@@ -1610,8 +1617,10 @@ footer {
   .view-controls button { width: 100%; padding: 9px 10px; }
   .toolbar-actions { flex-direction: column; width: 100%; margin-left: 0; }
   .sync-wrap { width: 100%; }
+  .quest-wrap { width: 100%; }
   .bank-wrap { width: 100%; }
   #syncMenuBtn { width: 100%; padding: 9px 10px; }
+  #questMenuBtn { width: 100%; padding: 9px 10px; }
   #bankMenuBtn { width: 100%; padding: 9px 10px; }
   .popover.popover-right { right: auto; left: 0; width: 100%; box-sizing: border-box; }
 
