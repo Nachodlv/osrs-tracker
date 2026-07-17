@@ -63,7 +63,9 @@ function makeContext() {
   };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
-  for (const f of ["migration.js", "data.js", "templates.js", "app.js"]) {
+  for (const f of ["migration.js", "data.js", "templates.js", "state.js", "graph.js",
+    "render.js", "dragdrop.js", "edges-menu.js", "modals.js", "profiles-ui.js",
+    "templates-ui.js", "sync.js", "app.js"]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, f), "utf8"), ctx, { filename: f });
   }
   return ctx;

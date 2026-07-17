@@ -23,6 +23,15 @@ const INDEX = path.join(ROOT, "index.html");
 // changed asset basename -> test suites to run
 const TEST_TRIGGERS = {
   "app.js": ["test-app.js"],
+  "state.js": ["test-app.js"],
+  "graph.js": ["test-app.js"],
+  "render.js": ["test-app.js"],
+  "dragdrop.js": ["test-app.js"],
+  "edges-menu.js": ["test-app.js"],
+  "modals.js": ["test-app.js"],
+  "profiles-ui.js": ["test-app.js"],
+  "templates-ui.js": ["test-app.js"],
+  "sync.js": ["test-app.js"],
   "templates.js": ["test-app.js"],
   "data.js": ["test-app.js", "test-migration.js", "test-crawl.js"],
   "migration.js": ["test-app.js", "test-migration.js"],
