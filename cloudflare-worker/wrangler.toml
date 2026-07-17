@@ -1,3 +1,11 @@
 name = "osrs-hiscores"
 main = "hiscores-proxy.js"
 compatibility_date = "2025-01-01"
+
+# Per-IP rate limit for the hiscores proxy. 20 lookups / 60s is far above what a
+# person clicking "Sync" needs, but caps a script hammering the public URL.
+# period must be 10 or 60. The Worker skips this gracefully if the binding is absent.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }

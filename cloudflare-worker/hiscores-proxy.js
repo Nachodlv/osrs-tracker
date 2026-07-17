@@ -27,7 +27,7 @@ function jsonError(status, message) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     // CORS preflight (harmless to support even for a simple GET).
     if (request.method === "OPTIONS") {
       return new Response(null, {
@@ -42,6 +42,15 @@ export default {
 
     const player = (new URL(request.url).searchParams.get("player") || "").trim();
     if (!player) return jsonError(400, "Missing ?player=name");
+
+    // Per-IP rate limit (optional): the RATE_LIMITER binding is configured in
+    // wrangler.toml / the dashboard. When it is absent (e.g. a plain copy-paste
+    // deploy) this is skipped, so the proxy still works, just unthrottled.
+    if (env && env.RATE_LIMITER) {
+      const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+      const { success } = await env.RATE_LIMITER.limit({ key: ip });
+      if (!success) return jsonError(429, "Too many lookups, wait a moment and try again.");
+    }
 
     try {
       const upstream = await fetch(HISCORES_URL + encodeURIComponent(player), {
