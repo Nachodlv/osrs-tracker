@@ -309,6 +309,6 @@ function showUndoToast(label) {
   t.appendChild(btn);
   document.body.appendChild(t);
   undoToastEl = t;
-  undoToastTimer = setTimeout(dismissUndoToast, 7000);
+  undoToastTimer = setTimeout(dismissUndoToast, 15000);
 }
 

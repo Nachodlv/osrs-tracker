@@ -326,6 +326,7 @@ function changeProfileTemplate(profileId, templateId, mode) {
     applyProfileTemplate(profileId);
     refreshProfileSelect();
     renderTemplateBanner();
+    renderTemplatesList();
   };
 
   const label = mode === "merge" ? `Added "${t.name}"` : `Replaced template with "${t.name}"`;
