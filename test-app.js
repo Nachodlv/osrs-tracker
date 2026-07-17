@@ -138,6 +138,29 @@ test("a grouped goal stays visible even when its new parent is collapsed", () =>
   assert.strictEqual(r.withRootLike, true, "as a group member it stays visible (the fix)");
 });
 
+test("merging a template keeps single-member tier groups (not ungrouped at the start)", () => {
+  // Regression: addNewTemplateGroups skipped groups with < 2 members, so
+  // merging the Ladlor template onto an already-seeded (empty) profile dropped
+  // every single-member tier box and rendered those goals loose at the start.
+  const r = inCtx(`
+    Templates.applyTemplate("ladlor");
+    state.groupsState = { groupOrder: [], groups: {} }; // already-seeded empty profile
+    currentNodes = getGraph().nodes;
+    addNewTemplateGroups();
+    const grouped = new Set();
+    state.groupsState.groupOrder.forEach(gid =>
+      (state.groupsState.groups[gid] || []).forEach(id => grouped.add(id)));
+    const vis = computeVisibility(currentNodes, grouped);
+    const ungrouped = Object.keys(currentNodes)
+      .filter(id => vis[id] && currentNodes[id].parentIds.length === 0 && !grouped.has(id));
+    const singleMemberGrouped = grouped.has("gear.voidwaker"); // a lone-member tier box
+    Templates.applyTemplate("__full__"); // restore global data for later tests
+    return { ungroupedCount: ungrouped.length, singleMemberGrouped };
+  `);
+  assert.strictEqual(r.ungroupedCount, 0, "no grouped goal should render loose at the start");
+  assert.strictEqual(r.singleMemberGrouped, true, "a single-member tier group must be kept");
+});
+
 console.log("\nGraph invariants");
 
 test("computeVisibility hides a normal child whose only parent is collapsed", () => {

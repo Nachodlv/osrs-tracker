@@ -114,7 +114,11 @@ function addNewTemplateGroups() {
   let next = gs.groupOrder.length;
   (typeof GEAR_GROUPS !== "undefined" ? GEAR_GROUPS : []).forEach(g => {
     const members = g.filter(id => currentNodes[id]);
-    if (members.length < 2) return;
+    // Add any group with a present member, including single-member tier boxes,
+    // to match how ensureGroupsState seeds a fresh profile. Skipping length < 2
+    // here left single-member groups (e.g. a lone tier item) ungrouped when a
+    // template was merged in, so they rendered loose at the start of the chart.
+    if (!members.length) return;
     if (existingSigs.has(members.slice().sort().join("|"))) return;
     if (members.some(m => placed.has(m))) return;
     let gid;
