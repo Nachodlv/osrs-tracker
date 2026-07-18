@@ -31,6 +31,7 @@ function render() {
 }
 
 function renderUnsafe() {
+  beginIconPass();
   const { nodes, discoveryOrder } = getGraph();
   currentNodes = nodes;
   lastDiscoveryOrder = discoveryOrder;

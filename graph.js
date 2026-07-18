@@ -335,16 +335,47 @@ function progressOf(id, nodes, memo) {
 
 // --- Icon rendering ----------------------------------------------------------
 
+// Every render rebuilds the whole chart, and a brand new <img> paints blank for
+// a frame before its (cached) bitmap decodes, which reads as all the icons
+// blinking on each toggle. Keep the built slots around and hand the same
+// elements back: re-parenting an already loaded <img> never repaints.
+const iconSlotCache = new Map();
+let iconSlotUse = new Map();
+
+// Called once per render pass: resets the per-key instance counters and drops
+// slots nothing asked for last pass (removed or edited goals).
+function beginIconPass() {
+  iconSlotCache.forEach((pool, key) => {
+    const used = iconSlotUse.get(key) || 0;
+    if (used === 0) iconSlotCache.delete(key);
+    else if (pool.length > used) pool.length = used;
+  });
+  iconSlotUse = new Map();
+}
+
 // Icon slot for a node: real wiki icon when resolvable, else the type's emoji.
 function renderIcon(node, sizeClass) {
+  const iconFile = typeof resolveIconFile === "function" ? resolveIconFile(node) : null;
+  const iconSrc = node.iconUrl || (iconFile ? WIKI_ICON_BASE + encodeURIComponent(iconFile) : null);
+  const key = [node.id, node.type || "", node.title, sizeClass || "", iconSrc || ""].join("|");
+  // A node can render twice in one pass (a grouped goal also linked as a
+  // child), so each key keeps a pool and every call takes the next free slot.
+  const instance = iconSlotUse.get(key) || 0;
+  iconSlotUse.set(key, instance + 1);
+  const pool = iconSlotCache.get(key) || [];
+  if (!pool[instance]) {
+    pool[instance] = buildIconSlot(node, sizeClass, iconSrc);
+    iconSlotCache.set(key, pool);
+  }
+  return pool[instance];
+}
+
+function buildIconSlot(node, sizeClass, src) {
   const slot = document.createElement("span");
   slot.className = "icon-slot" + (node.type ? " type-" + node.type : "") + (sizeClass ? " " + sizeClass : "");
 
   const fallbackEmoji = node.type && TYPE_META[node.type] ? TYPE_META[node.type].icon : "";
   const fallbackLabel = node.type && TYPE_META[node.type] ? TYPE_META[node.type].label : "";
-  const src = node.iconUrl || (typeof resolveIconFile === "function" && resolveIconFile(node)
-    ? WIKI_ICON_BASE + encodeURIComponent(resolveIconFile(node))
-    : null);
 
   if (!src) {
     if (fallbackEmoji) {
