@@ -6,5 +6,6 @@ window.addEventListener("unhandledrejection", e => {
   console.error("Unhandled promise rejection:", e.reason);
 });
 
+initThemeUI();
 refreshProfileSelect();
 render();

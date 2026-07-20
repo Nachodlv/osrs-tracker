@@ -390,6 +390,8 @@ function templateFromCurrentProfile(name) {
     if (n.link) node.link = n.link;
     if (n.note) node.note = n.note;
     if (n.description) node.description = n.description;
+    if (n.diaryArea) node.diaryArea = n.diaryArea;
+    if (n.diaryTier) node.diaryTier = n.diaryTier;
     node.children = [];
     (n.childIds || []).forEach(cid => {
       if (emitted[cid]) return; // a shared/multi-parent node is emitted once

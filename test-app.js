@@ -63,7 +63,7 @@ function makeContext() {
   };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
-  for (const f of ["migration.js", "data.js", "templates.js", "state.js", "graph.js",
+  for (const f of ["theme.js", "migration.js", "data.js", "templates.js", "state.js", "graph.js",
     "render.js", "dragdrop.js", "edges-menu.js", "modals.js", "profiles-ui.js",
     "templates-ui.js", "sync.js", "app.js"]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, f), "utf8"), ctx, { filename: f });
@@ -902,6 +902,85 @@ test("applyQuestSync matches quest names differing only in punctuation", () => {
   assert.strictEqual(r.g, true, "goal completed");
 });
 
+test("parseDiaryGoal resolves area and tier from the title, aliases included", () => {
+  const r = inCtx(`
+    const p = t => parseDiaryGoal({ title: t });
+    return {
+      full: p("Elite Morytania diary"),
+      alias: p("Kourend"),
+      areaOnly: p("Western Provinces"),
+      explicit: parseDiaryGoal({ title: "Varrock", diaryTier: "Medium" }),
+      override: parseDiaryGoal({ title: "Anything", diaryArea: "Falador", diaryTier: "Hard" }),
+      none: p("Dragon scimitar")
+    };
+  `);
+  assert.deepStrictEqual(r.full, { area: "Morytania", tier: "Elite" }, "tier and area parse from one title");
+  assert.deepStrictEqual(r.alias, { area: "Kourend & Kebos", tier: null }, "short area name maps to the API spelling");
+  assert.deepStrictEqual(r.areaOnly, { area: "Western Provinces", tier: null }, "area with no tier keeps a null tier");
+  assert.deepStrictEqual(r.explicit, { area: "Varrock", tier: "Medium" }, "explicit diaryTier fills in the missing tier");
+  assert.deepStrictEqual(r.override, { area: "Falador", tier: "Hard" }, "explicit fields win over the title");
+  assert.strictEqual(r.none, null, "a non-diary title resolves to null");
+});
+
+test("applyDiarySync completes only fully-finished diary goals with a known tier", () => {
+  const r = inCtx(`
+    const done = new Set([diaryKey("Morytania", "Elite"), diaryKey("Kourend & Kebos", "Medium")]);
+    currentNodes = {
+      a: { id: "a", title: "Elite Morytania diary", type: "diary" },
+      b: { id: "b", title: "Kourend", type: "diary", diaryTier: "Medium" },
+      c: { id: "c", title: "Kourend", type: "diary" },
+      d: { id: "d", title: "Hard Varrock diary", type: "diary" },
+      e: { id: "e", title: "Elite Morytania diary", type: "other" }
+    };
+    const changed = applyDiarySync(done);
+    return { changed, a: !!state.done.a, b: !!state.done.b, c: !!state.done.c, d: !!state.done.d, e: !!state.done.e };
+  `);
+  assert.strictEqual(r.changed, 2, "two completed diaries are ticked");
+  assert.strictEqual(r.a, true, "title-parsed area+tier matches");
+  assert.strictEqual(r.b, true, "explicit tier plus alias area matches");
+  assert.strictEqual(r.c, false, "a diary goal with no tier is left alone");
+  assert.strictEqual(r.d, false, "an unfinished diary stays incomplete");
+  assert.strictEqual(r.e, false, "a same-name non-diary goal is left alone");
+});
+
+test("diary goals resolve the diary icon and their area's wiki page", () => {
+  const r = inCtx(`
+    const node = { id: "medium-diaries.kourend", type: "diary", title: "Kourend", diaryTier: "Medium" };
+    const link = resolveDefaultLink(node);
+    return { icon: resolveIconFile(node), link: link.link, note: link.note };
+  `);
+  assert.strictEqual(r.icon, "Achievement_Diaries.png", "diary type supplies the generic diary icon");
+  assert.strictEqual(r.link, "https://oldschool.runescape.wiki/w/Kourend_%26_Kebos_Diary#Medium",
+    "link deep-links to the tier section of the area's '<Area> Diary' page");
+  assert.strictEqual(r.note, "Medium Kourend & Kebos", "note names the tier and area");
+});
+
+test("a diary goal with no tier links to the area page without a section anchor", () => {
+  const r = inCtx(`
+    const withTier = resolveDefaultLink({ type: "diary", title: "Easy Morytania Diary" });
+    const noTier = resolveDefaultLink({ type: "diary", title: "Morytania Diary" });
+    return { withTier: withTier.link, noTier: noTier.link };
+  `);
+  assert.strictEqual(r.withTier, "https://oldschool.runescape.wiki/w/Morytania_Diary#Easy",
+    "a named tier deep-links to that section");
+  assert.strictEqual(r.noTier, "https://oldschool.runescape.wiki/w/Morytania_Diary",
+    "no tier means the plain area page, with no trailing #");
+});
+
+test("built-in diary nodes carry their tier through the graph", () => {
+  const r = inCtx(`
+    Templates.applyTemplate(Templates.FULL_TEMPLATE_ID); // ladlor has no diary goals
+    const { nodes } = getGraph();
+    const n = nodes["medium-diaries.karamja"];
+    const out = { type: n && n.type, tier: n && n.diaryTier, parsed: n && parseDiaryGoal(n) };
+    Templates.applyTemplate("ladlor"); // restore for later tests
+    return out;
+  `);
+  assert.strictEqual(r.type, "diary", "the built-in Karamja medium diary is typed diary");
+  assert.strictEqual(r.tier, "Medium", "diaryTier survives graph construction");
+  assert.deepStrictEqual(r.parsed, { area: "Karamja", tier: "Medium" }, "it resolves to a syncable area+tier");
+});
+
 test("state.skillSource defaults to hiscores and round-trips through loadState", () => {
   const r = inCtx(`
     const def = defaultState().skillSource;
@@ -916,6 +995,24 @@ test("state.skillSource defaults to hiscores and round-trips through loadState",
   assert.strictEqual(r.def, "hiscores", "defaultState uses hiscores");
   assert.strictEqual(r.good, "runeprofile", "a saved runeprofile source survives load");
   assert.strictEqual(r.bad, "hiscores", "an unknown source falls back to hiscores");
+});
+
+test("applyTheme persists a known theme and falls back to the default", () => {
+  const r = inCtx(`
+    const saved = applyTheme("zanaris", true);
+    const stored = localStorage.getItem(THEME_KEY);
+    const reloaded = loadTheme();
+    const bogus = applyTheme("not-a-theme", true);
+    const afterBogus = loadTheme();
+    localStorage.removeItem(THEME_KEY);
+    return { saved, stored, reloaded, bogus, afterBogus, count: THEMES.length };
+  `);
+  assert.strictEqual(r.saved, "zanaris", "a known theme is applied");
+  assert.strictEqual(r.stored, "zanaris", "the choice is written to localStorage");
+  assert.strictEqual(r.reloaded, "zanaris", "and read back on load");
+  assert.strictEqual(r.bogus, "default", "an unknown theme falls back to default");
+  assert.strictEqual(r.afterBogus, "default", "the fallback is what gets stored");
+  assert.ok(r.count >= 4, "at least the default plus three alternatives exist");
 });
 
 console.log("\n" + passed + " test(s) passed.");

@@ -72,6 +72,13 @@ function updateFieldHints() {
     iconQueryInput.disabled = true;
     linkQueryHint.textContent = "(optional — leave blank to use the exact quest name)";
     linkQueryInput.placeholder = "e.g. Cabin Fever";
+  } else if (type === "diary") {
+    iconQueryLabel.textContent = "Icon override";
+    iconQueryHint.textContent = "(diaries always use the diary icon)";
+    iconQueryInput.placeholder = "";
+    iconQueryInput.disabled = true;
+    linkQueryHint.textContent = "(optional — leave blank to detect the area from the name)";
+    linkQueryInput.placeholder = "e.g. Hard Karamja";
   } else {
     iconQueryLabel.textContent = "Icon override";
     iconQueryHint.textContent = "(optional — leave blank to auto-search using the name)";
@@ -98,6 +105,8 @@ const updateLivePreview = debounce(async () => {
     setIconPreview(skill ? WIKI_ICON_BASE + skill + "_icon.png" : null, skill ? null : "?");
   } else if (type === "quest") {
     setIconPreview(WIKI_ICON_BASE + "Quest_point_icon.png", null);
+  } else if (type === "diary") {
+    setIconPreview(WIKI_ICON_BASE + "Achievement_Diaries.png", null);
   } else if (!iconQuery) {
     setIconPreview(null, "—");
   } else {
@@ -113,6 +122,13 @@ const updateLivePreview = debounce(async () => {
     linkPreviewEl.textContent = skill ? "→ Ironman Guide: " + skill : "No skill detected in that text";
   } else if (type === "quest") {
     linkPreviewEl.textContent = linkQuery ? "→ " + linkQuery : "—";
+  } else if (type === "diary") {
+    // Preview the resolved area+tier, so it is obvious when the name does not
+    // name a real diary (and so will never sync from RuneProfile).
+    const diary = typeof parseDiaryGoal === "function" ? parseDiaryGoal({ title: linkQuery }) : null;
+    linkPreviewEl.textContent = !diary
+      ? "No diary area detected in that text"
+      : "→ " + (diary.tier ? diary.tier + " " + diary.area : diary.area + " (no tier — will not sync)");
   } else if (!linkQuery) {
     linkPreviewEl.textContent = "—";
   } else {
@@ -467,6 +483,19 @@ function resolveAndStoreIconLink(id, isCustom, type, iconQuery, linkQuery) {
     } else if (linkQuery) {
       target.link = `https://oldschool.runescape.wiki/w/${encodeURIComponent(linkQuery.trim().replace(/ /g, "_"))}`;
       target.note = null;
+    }
+    saveState();
+    render();
+    return;
+  }
+
+  if (type === "diary") {
+    target.iconUrl = WIKI_ICON_BASE + "Achievement_Diaries.png";
+    if (linkQuery === null) {
+      target.link = null;
+    } else {
+      const diary = parseDiaryGoal({ title: linkQuery });
+      if (diary) { target.link = diaryAreaLink(diary.area, diary.tier); target.note = null; }
     }
     saveState();
     render();

@@ -1,16 +1,181 @@
+/* Theme tokens. Every color in this file comes from one of these, so a theme
+   only has to redefine the block. --gold is the theme's primary accent (it is
+   literally gold only in the default theme); --on-gold/--on-green are the ink
+   colors used on top of those fills. Themes are applied by theme.js, which sets
+   data-theme on <html>; no attribute means the default theme below. */
 :root {
   --bg: #14110d;
+  --bg-grad-top: #221b12;
   --bg-panel: #1d1812;
   --bg-card: #241d15;
+  --bg-sunken: #100d08;
+  --bg-deep: #0c0a07;
+  --topbar-a: #221b12;
+  --topbar-b: #181309;
   --border: #4a3b25;
   --border-light: #6b5839;
+  --border-soft: #4a3f25;
   --gold: #d4af37;
   --gold-bright: #f3d469;
+  --on-gold: #1a1409;
   --text: #e8ddc7;
   --text-dim: #a89a7c;
+  --text-shadow: #000;
   --green: #6fae4a;
+  --green-dark: #4f7a33;
+  --on-green: #0c1407;
   --red: #b3473a;
+  --red-bright: #ff8a7a;
+  --accent: #4ad8e8;
+  --accent-glow: rgba(74, 216, 232, 0.55);
+  --info: #6fb8d9;
+  --info-border: #3a6b80;
+  --type-skill: #6fae4a;
+  --type-quest: #4a7fc9;
+  --type-diary: #a86fd0;
+  --type-item: #c9a24a;
+  --type-other: #9d9384;
   font-size: 16px;
+}
+
+/* Parchment, the one light theme: cream page, ink-brown text. */
+:root[data-theme="parchment"] {
+  --bg: #efe6d2;
+  --bg-grad-top: #fbf5e6;
+  --bg-panel: #e6dbc2;
+  --bg-card: #f6efdd;
+  --bg-sunken: #e2d6ba;
+  --bg-deep: #d9cdb0;
+  --topbar-a: #f3ead4;
+  --topbar-b: #e4d8bb;
+  --border: #b9a67c;
+  --border-light: #8f7c52;
+  --border-soft: #c3b189;
+  --gold: #8a6d1f;
+  --gold-bright: #6b5312;
+  --on-gold: #fdf8ea;
+  --text: #3a2f1c;
+  --text-dim: #6f6047;
+  --text-shadow: rgba(255, 255, 255, 0.6);
+  --green: #3f7a2a;
+  --green-dark: #2c5a1c;
+  --on-green: #f2fae9;
+  --red: #a4342a;
+  --red-bright: #8c2b22;
+  --accent: #0d6c86;
+  --accent-glow: rgba(13, 108, 134, 0.35);
+  --info: #1d6a8c;
+  --info-border: #7fb3c8;
+  --type-skill: #3f7a2a;
+  --type-quest: #2f5ea8;
+  --type-diary: #7a3fa0;
+  --type-item: #9a7420;
+  --type-other: #6f6a60;
+}
+
+/* Wilderness: near-black with ember reds. */
+:root[data-theme="wilderness"] {
+  --bg: #0f0b0b;
+  --bg-grad-top: #241010;
+  --bg-panel: #191111;
+  --bg-card: #211414;
+  --bg-sunken: #0c0808;
+  --bg-deep: #080505;
+  --topbar-a: #241010;
+  --topbar-b: #140b0b;
+  --border: #5a2a26;
+  --border-light: #7d3b33;
+  --border-soft: #4e2622;
+  --gold: #e0553f;
+  --gold-bright: #ff8763;
+  --on-gold: #1a0806;
+  --text: #ecd8d2;
+  --text-dim: #b09590;
+  --text-shadow: #000;
+  --green: #5f9e57;
+  --green-dark: #3f6b39;
+  --on-green: #08140a;
+  --red: #d13b2c;
+  --red-bright: #ff8a7a;
+  --accent: #ffb44a;
+  --accent-glow: rgba(255, 180, 74, 0.5);
+  --info: #9aa8c9;
+  --info-border: #4a5570;
+  --type-skill: #5f9e57;
+  --type-quest: #7d6bd0;
+  --type-diary: #d05f9e;
+  --type-item: #d08a3a;
+  --type-other: #a09490;
+}
+
+/* Zanaris: fairy purples with a jade "done" green. */
+:root[data-theme="zanaris"] {
+  --bg: #100d1c;
+  --bg-grad-top: #1c1733;
+  --bg-panel: #171326;
+  --bg-card: #1e1932;
+  --bg-sunken: #0d0a17;
+  --bg-deep: #090713;
+  --topbar-a: #1c1733;
+  --topbar-b: #120e22;
+  --border: #3c3163;
+  --border-light: #57488c;
+  --border-soft: #372d59;
+  --gold: #b58cff;
+  --gold-bright: #d5bcff;
+  --on-gold: #140c26;
+  --text: #e2dcf5;
+  --text-dim: #a096c4;
+  --text-shadow: #000;
+  --green: #4fc3a1;
+  --green-dark: #2f8a70;
+  --on-green: #05201a;
+  --red: #d1476b;
+  --red-bright: #ff8aa6;
+  --accent: #4ad8e8;
+  --accent-glow: rgba(74, 216, 232, 0.55);
+  --info: #6fb8d9;
+  --info-border: #3a6b80;
+  --type-skill: #4fc3a1;
+  --type-quest: #6f8ce0;
+  --type-diary: #c98ae0;
+  --type-item: #e0b46a;
+  --type-other: #9a94a8;
+}
+
+/* Tidal: deep sea blues, amber highlight. */
+:root[data-theme="tidal"] {
+  --bg: #0b1017;
+  --bg-grad-top: #122130;
+  --bg-panel: #101822;
+  --bg-card: #14202c;
+  --bg-sunken: #080e14;
+  --bg-deep: #060b10;
+  --topbar-a: #122130;
+  --topbar-b: #0b131c;
+  --border: #27455c;
+  --border-light: #3d6580;
+  --border-soft: #24404f;
+  --gold: #4fb3e8;
+  --gold-bright: #8fd8ff;
+  --on-gold: #06131c;
+  --text: #d8e8f2;
+  --text-dim: #8fa6b8;
+  --text-shadow: #000;
+  --green: #4fbf82;
+  --green-dark: #2f8a5c;
+  --on-green: #04170e;
+  --red: #d1554a;
+  --red-bright: #ff9080;
+  --accent: #ffd166;
+  --accent-glow: rgba(255, 209, 102, 0.5);
+  --info: #6fb8d9;
+  --info-border: #3a6b80;
+  --type-skill: #4fbf82;
+  --type-quest: #5b8fe0;
+  --type-diary: #9f7fe0;
+  --type-item: #e0b45a;
+  --type-other: #8e9ba4;
 }
 
 * { box-sizing: border-box; }
@@ -38,7 +203,7 @@
 body {
   margin: 0;
   font-family: "Trebuchet MS", "Segoe UI", sans-serif;
-  background: radial-gradient(ellipse at top, #221b12 0%, var(--bg) 60%);
+  background: radial-gradient(ellipse at top, var(--bg-grad-top) 0%, var(--bg) 60%);
   color: var(--text);
   min-height: 100vh;
 }
@@ -49,7 +214,7 @@ a { color: var(--gold-bright); }
   position: sticky;
   top: 0;
   z-index: 10;
-  background: linear-gradient(180deg, #221b12 0%, #181309 100%);
+  background: linear-gradient(180deg, var(--topbar-a) 0%, var(--topbar-b) 100%);
   border-bottom: 2px solid var(--border);
   padding: 14px 20px 10px;
 }
@@ -68,7 +233,7 @@ h1 {
   margin: 0;
   font-size: 1.4rem;
   color: var(--gold-bright);
-  text-shadow: 0 1px 0 #000;
+  text-shadow: 0 1px 0 var(--text-shadow);
 }
 
 .subtitle {
@@ -94,7 +259,7 @@ h1 {
 .overall-progress-bar {
   width: 180px;
   height: 14px;
-  background: #0c0a07;
+  background: var(--bg-deep);
   border: 1px solid var(--border-light);
   border-radius: 7px;
   overflow: hidden;
@@ -103,7 +268,7 @@ h1 {
 .overall-progress-fill {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #4f7a33, var(--green));
+  background: linear-gradient(90deg, var(--green-dark), var(--green));
   transition: width 0.25s ease;
 }
 
@@ -200,7 +365,8 @@ h1 {
   flex-wrap: wrap;
 }
 
-.profile-label {
+.profile-label,
+.theme-label {
   font-size: 0.8rem;
   color: var(--text-dim);
 }
@@ -272,7 +438,7 @@ h1 {
 
 .popover button.danger:hover {
   border-color: var(--red);
-  color: #ff8a7a;
+  color: var(--red-bright);
 }
 
 .popover-sep {
@@ -301,7 +467,8 @@ h1 {
   color: var(--gold-bright);
 }
 
-#profileSelect {
+#profileSelect,
+#themeSelect {
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text);
@@ -349,7 +516,7 @@ h1 {
 }
 
 .sync-status.error {
-  color: #ff8a7a;
+  color: var(--red-bright);
 }
 
 .sync-status.success {
@@ -442,8 +609,8 @@ h1 {
 
 .action-btn.auto-btn {
   cursor: default;
-  color: #6fb8d9;
-  border-color: #3a6b80;
+  color: var(--info);
+  border-color: var(--info-border);
   opacity: 0.85;
 }
 
@@ -464,13 +631,13 @@ h1 {
 .toolbar button.active {
   background: var(--gold);
   border-color: var(--gold);
-  color: #1a1409;
+  color: var(--on-gold);
   font-weight: bold;
 }
 
 .toolbar button.danger:hover {
   border-color: var(--red);
-  color: #ff8a7a;
+  color: var(--red-bright);
 }
 
 main#chart {
@@ -517,7 +684,7 @@ main#chart {
   gap: 6px;
   padding: 8px 8px 8px 22px;
   margin: 10px 18px;
-  border: 1px solid #4a3f25;
+  border: 1px solid var(--border-soft);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.02);
   transition: border-color 0.15s, background 0.15s;
@@ -626,7 +793,7 @@ main#chart {
 
 .undo-toast-btn {
   background: var(--gold);
-  color: #1a1409;
+  color: var(--on-gold);
   border: none;
   border-radius: 6px;
   padding: 5px 14px;
@@ -670,7 +837,7 @@ main#chart {
   position: absolute;
   top: -3px;
   left: -3px;
-  background: #1a1409;
+  background: var(--on-gold);
   border: 1px solid var(--gold);
   color: var(--gold-bright);
   font-size: 0.65rem;
@@ -690,7 +857,7 @@ main#chart {
   bottom: -2px;
   right: -2px;
   background: var(--green);
-  color: #0c1407;
+  color: var(--on-green);
   font-size: 0.55rem;
   width: 14px;
   height: 14px;
@@ -738,7 +905,7 @@ main#chart {
    to change which goal this arrow feeds into. */
 .edge-handle {
   fill: var(--gold);
-  stroke: #1a1409;
+  stroke: var(--on-gold);
   stroke-width: 1;
   opacity: 0;
   cursor: grab;
@@ -762,7 +929,7 @@ main#chart {
 }
 
 .graph-node.retarget-target {
-  outline: 2px solid #4ad8e8;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -793,13 +960,13 @@ main#chart {
 }
 
 .graph-node.related-glow {
-  border-color: #4ad8e8;
-  box-shadow: 0 0 0 2px #4ad8e8, 0 0 16px rgba(74, 216, 232, 0.55);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), 0 0 16px var(--accent-glow);
   z-index: 2;
 }
 
 .edge-layer .edge.edge-glow {
-  stroke: #4ad8e8;
+  stroke: var(--accent);
   opacity: 1;
 }
 
@@ -816,10 +983,11 @@ main#chart {
   opacity: 0.15;
 }
 
-.graph-node.type-skill { border-left-color: #6fae4a; }
-.graph-node.type-quest { border-left-color: #4a7fc9; }
-.graph-node.type-item { border-left-color: #c9a24a; }
-.graph-node.type-other { border-left-color: var(--gold); }
+.graph-node.type-skill { border-left-color: var(--type-skill); }
+.graph-node.type-quest { border-left-color: var(--type-quest); }
+.graph-node.type-diary { border-left-color: var(--type-diary); }
+.graph-node.type-item { border-left-color: var(--type-item); }
+.graph-node.type-other { border-left-color: var(--type-other); }
 
 .graph-node.status-done {
   border-color: var(--green);
@@ -918,7 +1086,7 @@ main#chart {
 .action-btn.done-btn {
   background: var(--green);
   border-color: var(--green);
-  color: #0c1407;
+  color: var(--on-green);
 }
 
 .action-btn.locked-btn {
@@ -975,7 +1143,7 @@ main#chart {
   align-items: center;
   justify-content: center;
   font-size: 1rem;
-  background: #100d08;
+  background: var(--bg-sunken);
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: inset 0 1px 3px rgba(0,0,0,0.6);
@@ -1081,7 +1249,7 @@ button.add-link:hover {
   display: block;
   width: 100%;
   margin-top: 4px;
-  background: #100d08;
+  background: var(--bg-sunken);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 5px;
@@ -1115,7 +1283,7 @@ button.add-link:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #100d08;
+  background: var(--bg-sunken);
   border: 1px solid var(--border);
   border-radius: 5px;
   font-size: 0.75rem;
@@ -1181,7 +1349,7 @@ button.add-link:hover {
 
 .error-notice {
   font-size: 0.75rem;
-  color: #ff8a7a;
+  color: var(--red-bright);
   margin: -4px 0 12px;
 }
 
@@ -1246,7 +1414,7 @@ button.add-link:hover {
   border-radius: 4px;
 }
 
-.goal-link-remove:hover { color: #ff8a7a; background: rgba(255, 138, 122, 0.12); }
+.goal-link-remove:hover { color: var(--red-bright); background: rgba(255, 138, 122, 0.12); }
 
 .goal-link-empty {
   font-size: 0.75rem;
@@ -1387,12 +1555,12 @@ button.add-link:hover {
 
 #templatesModal button.danger:hover {
   border-color: var(--red);
-  color: #ff8a7a;
+  color: var(--red-bright);
 }
 
 #templatesModal button.confirming {
   border-color: var(--red);
-  color: #ff8a7a;
+  color: var(--red-bright);
   font-weight: bold;
 }
 
@@ -1434,7 +1602,7 @@ button.add-link:hover {
 .modal-actions button.primary {
   background: var(--green);
   border-color: var(--green);
-  color: #0c1407;
+  color: var(--on-green);
   font-weight: bold;
 }
 
@@ -1446,7 +1614,7 @@ button.add-link:hover {
 
 .modal-actions button.danger:not(.primary) {
   border-color: var(--red);
-  color: #ff8a7a;
+  color: var(--red-bright);
 }
 
 .modal-actions button:hover {
@@ -1592,7 +1760,7 @@ footer {
   display: block;
   width: 100%;
   margin-top: 4px;
-  background: #100d08;
+  background: var(--bg-sunken);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 5px;

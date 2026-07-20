@@ -4,8 +4,9 @@
     {
       "name": "iron-tracker-server",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["server.py", "8792"],
-      "port": 8792
+      "runtimeArgs": ["server.py"],
+      "port": 8792,
+      "autoPort": true
     }
   ]
 }

@@ -1,11 +1,13 @@
 // Goal tree data, derived from "Iron Runescape.md" (based on ladlorchart.com's ironman unlock chart).
 // Each node: { id, title, link, note, type, shared, children: [...] }
 // - id must stay stable so localStorage progress doesn't get orphaned.
-// - type: "skill" | "quest" | "item" | "other" — drives icon lookup and the default wiki
-//   link (skill -> "<Skill> training" page, quest -> the quest's own page). "item" behaves
-//   like "other" for icon/link (fuzzy wiki search) but is also auto-completed by an uploaded
-//   bank memory (matched by name). "other" keeps whatever icon/link is set explicitly, with a
-//   generic fallback otherwise.
+// - type: "skill" | "quest" | "diary" | "item" | "other" — drives icon lookup and the default
+//   wiki link (skill -> "<Skill> training" page, quest -> the quest's own page, diary -> the
+//   area's "<Area> Diary" page). "diary" is one area+tier achievement diary, auto-completed
+//   from RuneProfile; area/tier are read from the title unless `diaryArea`/`diaryTier` say
+//   otherwise. "item" behaves like "other" for icon/link (fuzzy wiki search) but is also
+//   auto-completed by an uploaded bank memory (matched by name). "other" keeps whatever
+//   icon/link is set explicitly, with a generic fallback otherwise.
 // - shared marks a requirement that unlocks multiple goals (e.g. Eagles' Peak). All
 //   nodes with the same `shared` key share one completion checkbox across the whole tree.
 
@@ -61,7 +63,7 @@ var GOAL_DATA = [
         title: "Harmony Island ⇒ skip",
         type: "other",
         children: [
-          { id: "herb-run.harmony.elite-mory", title: "Elite Morytania diary", type: "other", icon: "Achievement_Diaries.png", link: "https://oldschool.runescape.wiki/w/Achievement_Diaries/Morytania" }
+          { id: "herb-run.harmony.elite-mory", title: "Elite Morytania diary", type: "diary" }
         ]
       }
     ]
@@ -221,7 +223,7 @@ var GOAL_DATA = [
     icon: "Achievement_Diaries.png",
     link: "https://oldschool.runescape.wiki/w/Achievement_Diaries",
     children: [
-      { id: "easy-diaries.fremennik", title: "Fremennik", type: "other", icon: "Achievement_Diaries.png", link: "https://oldschool.runescape.wiki/w/Achievement_Diaries/Fremennik" }
+      { id: "easy-diaries.fremennik", title: "Fremennik", type: "diary", diaryTier: "Easy" }
     ]
   },
   {
@@ -234,32 +236,29 @@ var GOAL_DATA = [
       {
         id: "medium-diaries.varrock",
         title: "Varrock",
-        type: "other",
-        icon: "Achievement_Diaries.png",
-        link: "https://oldschool.runescape.wiki/w/Achievement_Diaries/Varrock",
+        type: "diary",
+        diaryTier: "Medium",
         children: [
           { id: "medium-diaries.varrock.souls-bane", title: "A Soul's Bane", type: "quest" }
         ]
       },
-      { id: "medium-diaries.kandarin", title: "Kandarin", type: "other", icon: "Achievement_Diaries.png", link: "https://oldschool.runescape.wiki/w/Achievement_Diaries/Kandarin" },
+      { id: "medium-diaries.kandarin", title: "Kandarin", type: "diary", diaryTier: "Medium" },
       {
         id: "medium-diaries.wilderness",
         title: "Wilderness",
-        type: "other",
-        icon: "Achievement_Diaries.png",
-        link: "https://oldschool.runescape.wiki/w/Achievement_Diaries/Wilderness",
+        type: "diary",
+        diaryTier: "Medium",
         children: [
           { id: "medium-diaries.wilderness.50slayer", title: "50 Slayer", type: "skill", shared: "50-slayer" },
           { id: "medium-diaries.wilderness.between-a-rock", title: "Between a Rock...", type: "quest", shared: "between-a-rock" }
         ]
       },
-      { id: "medium-diaries.karamja", title: "Karamja", type: "other", icon: "Achievement_Diaries.png", link: "https://oldschool.runescape.wiki/w/Achievement_Diaries/Karamja" },
+      { id: "medium-diaries.karamja", title: "Karamja", type: "diary", diaryTier: "Medium" },
       {
         id: "medium-diaries.kourend",
         title: "Kourend",
-        type: "other",
-        icon: "Achievement_Diaries.png",
-        link: "https://oldschool.runescape.wiki/w/Achievement_Diaries/Kourend_%26_Kebos",
+        type: "diary",
+        diaryTier: "Medium",
         children: [
           { id: "medium-diaries.kourend.eagles-peak", title: "Eagles' Peak", type: "quest", shared: "eagles-peak" }
         ]
@@ -267,9 +266,8 @@ var GOAL_DATA = [
       {
         id: "medium-diaries.morytania",
         title: "Morytania",
-        type: "other",
-        icon: "Achievement_Diaries.png",
-        link: "https://oldschool.runescape.wiki/w/Achievement_Diaries/Morytania",
+        type: "diary",
+        diaryTier: "Medium",
         children: [
           {
             id: "medium-diaries.morytania.cabin-fever",
@@ -294,9 +292,8 @@ var GOAL_DATA = [
       {
         id: "medium-diaries.fremennik",
         title: "Fremennik",
-        type: "other",
-        icon: "Achievement_Diaries.png",
-        link: "https://oldschool.runescape.wiki/w/Achievement_Diaries/Fremennik",
+        type: "diary",
+        diaryTier: "Medium",
         children: [
           { id: "medium-diaries.fremennik.olafs-quest", title: "Olaf's Quest", type: "quest" },
           { id: "medium-diaries.fremennik.eagles-peak", title: "Eagles' Peak", type: "quest", shared: "eagles-peak" },
@@ -307,9 +304,8 @@ var GOAL_DATA = [
       {
         id: "medium-diaries.desert",
         title: "Desert",
-        type: "other",
-        icon: "Achievement_Diaries.png",
-        link: "https://oldschool.runescape.wiki/w/Achievement_Diaries/Desert",
+        type: "diary",
+        diaryTier: "Medium",
         children: [
           { id: "medium-diaries.desert.eagles-peak", title: "Eagles' Peak", type: "quest", shared: "eagles-peak" },
           { id: "medium-diaries.desert.spirits-of-elid", title: "Spirits of the Elid", type: "quest" }
@@ -318,9 +314,8 @@ var GOAL_DATA = [
       {
         id: "medium-diaries.western",
         title: "Western Provinces",
-        type: "other",
-        icon: "Achievement_Diaries.png",
-        link: "https://oldschool.runescape.wiki/w/Achievement_Diaries/Western_Provinces",
+        type: "diary",
+        diaryTier: "Medium",
         children: [
           { id: "medium-diaries.western.eagles-peak", title: "Eagles' Peak", type: "quest", shared: "eagles-peak" },
           { id: "medium-diaries.western.eyes-of-glouphrie", title: "Eyes of Glouphrie", type: "quest" },
@@ -519,6 +514,7 @@ var GOAL_DATA = [
 const TYPE_META = {
   skill: { icon: "⚔️", wikiIcon: null, label: "Skill" },
   quest: { icon: "📜", wikiIcon: "Quest_point_icon.png", label: "Quest" },
+  diary: { icon: "📔", wikiIcon: "Achievement_Diaries.png", label: "Diary" },
   item: { icon: "🎒", wikiIcon: null, label: "Item" },
   other: { icon: "📦", wikiIcon: null, label: "Other" }
 };
@@ -557,6 +553,66 @@ function parseSkillRequirement(title) {
   return { skill, level };
 }
 
+// Achievement diary areas, spelled exactly as RuneProfile's API reports them (the
+// same spelling the wiki uses for the "<Area> Diary" page).
+const DIARY_AREAS = [
+  "Ardougne", "Desert", "Falador", "Fremennik", "Kandarin", "Karamja",
+  "Kourend & Kebos", "Lumbridge & Draynor", "Morytania", "Varrock",
+  "Western Provinces", "Wilderness"
+];
+
+const DIARY_TIERS = ["Easy", "Medium", "Hard", "Elite"];
+
+// Short names the chart uses for areas whose full name is longer.
+const DIARY_AREA_ALIASES = {
+  "kourend": "Kourend & Kebos",
+  "kebos": "Kourend & Kebos",
+  "lumbridge": "Lumbridge & Draynor",
+  "draynor": "Lumbridge & Draynor",
+  "western": "Western Provinces"
+};
+
+function normalizeDiaryText(text) {
+  return String(text || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+// Longest area name first, so "Kourend & Kebos" wins over the "kourend" alias.
+function detectDiaryArea(title) {
+  const text = " " + normalizeDiaryText(title) + " ";
+  const areas = DIARY_AREAS.slice().sort((a, b) => b.length - a.length);
+  for (const area of areas) {
+    if (text.includes(" " + normalizeDiaryText(area) + " ")) return area;
+  }
+  for (const alias of Object.keys(DIARY_AREA_ALIASES).sort((a, b) => b.length - a.length)) {
+    if (text.includes(" " + alias + " ")) return DIARY_AREA_ALIASES[alias];
+  }
+  return null;
+}
+
+function detectDiaryTier(title) {
+  const text = " " + normalizeDiaryText(title) + " ";
+  return DIARY_TIERS.find(t => text.includes(" " + t.toLowerCase() + " ")) || null;
+}
+
+// The area+tier a "diary" node stands for. Explicit diaryArea/diaryTier win, so a
+// node titled just "Varrock" inside a "Medium Diaries" group can name its tier.
+// Returns null when no area can be resolved; tier may be null on its own.
+function parseDiaryGoal(node) {
+  if (!node) return null;
+  const area = node.diaryArea || detectDiaryArea(node.title);
+  if (!area) return null;
+  return { area, tier: node.diaryTier || detectDiaryTier(node.title) };
+}
+
+// The wiki has one page per area named "<Area> Diary"; there is no
+// Achievement_Diaries/<Area> subpage (that URL 404s). Each page has an
+// Easy/Medium/Hard/Elite section, so a known tier deep-links straight to it.
+function diaryAreaLink(area, tier) {
+  const url = "https://oldschool.runescape.wiki/w/" +
+    encodeURIComponent(area.replace(/ /g, "_") + "_Diary");
+  return tier ? url + "#" + encodeURIComponent(tier) : url;
+}
+
 // Attack and Strength share the combined Melee ironman guide page.
 const IRONMAN_GUIDE_PAGE = { Attack: "Melee", Strength: "Melee" };
 
@@ -577,7 +633,7 @@ function resolveIconFile(node) {
 }
 
 // Default wiki link for a node without an explicit one: skills link to their
-// "Ironman Guide/<Skill>" page, quests to their own page.
+// "Ironman Guide/<Skill>" page, quests to their own page, diaries to their area's.
 function resolveDefaultLink(node) {
   if (node.link) return null;
   if (node.type === "skill") {
@@ -587,6 +643,13 @@ function resolveDefaultLink(node) {
   if (node.type === "quest") {
     const page = node.title.trim().replace(/ /g, "_");
     return { link: `https://oldschool.runescape.wiki/w/${encodeURIComponent(page)}`, note: null };
+  }
+  if (node.type === "diary") {
+    const diary = parseDiaryGoal(node);
+    return {
+      link: diary ? diaryAreaLink(diary.area, diary.tier) : "https://oldschool.runescape.wiki/w/Achievement_Diaries",
+      note: diary && diary.tier ? diary.tier + " " + diary.area : null
+    };
   }
   return null;
 }

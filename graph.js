@@ -87,10 +87,14 @@ function buildGraph(tree) {
       nodes[id] = {
         id, title: raw.title, type: effectiveType, link: raw.link, note: raw.note,
         shared: raw.shared, custom: raw.custom, icon: raw.icon, iconUrl: raw.iconUrl,
-        description: raw.description, childIds: [], parentIds: []
+        description: raw.description, diaryArea: raw.diaryArea, diaryTier: raw.diaryTier,
+        childIds: [], parentIds: []
       };
       const defaultLink = typeof resolveDefaultLink === "function"
-        ? resolveDefaultLink({ type: effectiveType, title: (ov && ov.title) || raw.title, link: raw.link })
+        ? resolveDefaultLink({
+            type: effectiveType, title: (ov && ov.title) || raw.title, link: raw.link,
+            diaryArea: raw.diaryArea, diaryTier: raw.diaryTier
+          })
         : null;
       if (defaultLink) {
         nodes[id].link = defaultLink.link;

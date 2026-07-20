@@ -153,6 +153,42 @@ function applyQuestSync(finished) {
   return changed;
 }
 
+// Returns a Set of "<area>|<tier>" keys for every achievement diary the account
+// has fully completed. RuneProfile reports per-tier task counts, so a tier counts
+// as done only when every task in it is ticked.
+async function fetchRuneProfileDiaries(username) {
+  const rows = await fetchRuneProfileJson(username, "achievement-diaries");
+  const done = new Set();
+  rows.forEach(area => {
+    if (!area || !Array.isArray(area.tiers)) return;
+    area.tiers.forEach(t => {
+      if (t && t.total > 0 && t.completed >= t.total) done.add(diaryKey(area.area, t.tier));
+    });
+  });
+  return done;
+}
+
+function diaryKey(area, tier) {
+  return normalizeDiaryText(area) + "|" + normalizeDiaryText(tier);
+}
+
+// Mark every not-done "diary" goal whose area+tier is fully completed. A diary goal
+// with no resolvable tier (just an area) is left alone, since we cannot tell which
+// of the four tiers it means. Only ever completes goals, like the other syncs.
+function applyDiarySync(doneDiaries) {
+  let changed = 0;
+  Object.values(currentNodes).forEach(node => {
+    if (state.done[node.id] || node.type !== "diary") return;
+    const diary = parseDiaryGoal(node);
+    if (!diary || !diary.tier) return;
+    if (doneDiaries.has(diaryKey(diary.area, diary.tier))) {
+      state.done[node.id] = true;
+      changed++;
+    }
+  });
+  return changed;
+}
+
 const rsnInputEl = document.getElementById("rsnInput");
 const syncStatsBtnEl = document.getElementById("syncStatsBtn");
 const syncStatusTextEl = document.getElementById("syncStatusText");
@@ -224,15 +260,24 @@ questSyncBtnEl.addEventListener("click", async () => {
   questStatusTextEl.className = "sync-status";
   questSyncBtnEl.disabled = true;
   try {
-    const finished = await fetchRuneProfileQuests(username);
-    let changed = 0;
-    withUndo("Synced quests from RuneProfile", () => {
-      changed = applyQuestSync(finished);
+    // Quests and diaries come from the same account, so one click syncs both.
+    const [finished, doneDiaries] = await Promise.all([
+      fetchRuneProfileQuests(username),
+      fetchRuneProfileDiaries(username)
+    ]);
+    let quests = 0;
+    let diaries = 0;
+    withUndo("Synced quests and diaries from RuneProfile", () => {
+      quests = applyQuestSync(finished);
+      diaries = applyDiarySync(doneDiaries);
       saveState();
       render();
     });
-    questStatusTextEl.textContent = changed
-      ? `Synced — ${changed} quest goal${changed === 1 ? "" : "s"} completed`
+    const parts = [];
+    if (quests) parts.push(`${quests} quest${quests === 1 ? "" : "s"}`);
+    if (diaries) parts.push(`${diaries} diar${diaries === 1 ? "y" : "ies"}`);
+    questStatusTextEl.textContent = parts.length
+      ? `Synced — ${parts.join(" and ")} completed`
       : "Synced — no new goals completed";
     questStatusTextEl.className = "sync-status success";
   } catch (e) {

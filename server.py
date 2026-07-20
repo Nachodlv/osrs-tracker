@@ -8,6 +8,7 @@ Then open http://localhost:8791/index.html
 """
 
 import http.server
+import os
 import socketserver
 import sys
 import urllib.parse
@@ -64,7 +65,8 @@ class ReusableServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
+    # An explicit argv port wins; PORT lets a launcher assign a free one.
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT") or DEFAULT_PORT)
     server = ReusableServer(("", port), Handler)
     print(f"Serving Iron Tracker on http://localhost:{port}/index.html")
     print("Hiscores sync available at /api/hiscores?player=NAME")
