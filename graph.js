@@ -337,6 +337,122 @@ function progressOf(id, nodes, memo) {
   return r;
 }
 
+// --- Currencies --------------------------------------------------------------
+// A currency is a resource several goals spend (marks of grace, coins). The cost
+// lives on the goal that spends it, never on a shared sub-goal node: a shared
+// node has one identity, so "Graceful boots needs 40" and "Graceful cape needs
+// 40" would read as 40 instead of 80. Summing per-goal costs gives the real 80.
+// Costs are advisory: they never gate a checkmark, so the status model stays
+// two-state.
+
+function currencySlug(name) {
+  return String(name || "").toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+// Parses an amount typed the way the game shows them: "120k" -> 120000,
+// "1.5m" -> 1500000, "2b" -> 2000000000. Plain digits and thousands separators
+// work too. Returns null when nothing usable was typed, so callers can tell
+// "empty/garbage" from a real 0.
+function parseAmount(text) {
+  const raw = String(text == null ? "" : text).trim().toLowerCase().replace(/[\s,]/g, "");
+  if (!raw) return null;
+  const m = /^(\d+(?:\.\d+)?)([kmb])?$/.exec(raw);
+  if (!m) return null;
+  const mult = m[2] === "b" ? 1e9 : m[2] === "m" ? 1e6 : m[2] === "k" ? 1e3 : 1;
+  const value = Math.round(parseFloat(m[1]) * mult);
+  return Number.isFinite(value) ? value : null;
+}
+
+// Compact display for amounts that get large (coins): 1500 -> 1.5K, 2000000 -> 2M.
+function formatCurrencyAmount(n) {
+  const v = Number(n) || 0;
+  const abs = Math.abs(v);
+  if (abs >= 1000000) return (v / 1000000).toFixed(abs % 1000000 ? 1 : 0).replace(/\.0$/, "") + "M";
+  if (abs >= 10000) return (v / 1000).toFixed(abs % 1000 ? 1 : 0).replace(/\.0$/, "") + "K";
+  return String(v);
+}
+
+// Looks up a currency by name, or mints and registers a new one. Returns its id.
+function ensureCurrency(name) {
+  const id = currencySlug(name);
+  if (!id) return null;
+  if (!state.currencies[id]) {
+    state.currencies[id] = { id, name: String(name).trim(), bankName: String(name).trim(), held: 0 };
+  }
+  return id;
+}
+
+// What a goal's subtree (itself plus all descendants) still costs, as
+// { currencyId: amount }, so a parent shows what finishing the branch takes from
+// here. A done goal contributes nothing, which is what makes ticking a sub-goal
+// lower its parent's total. Descendants are still walked past a done goal, since
+// linking can leave an unfinished goal under a finished one. A goal reachable by
+// several paths counts once, and `seen` also makes this safe on the DAG.
+function subtreeCosts(id, nodes, memo) {
+  if (memo && memo[id]) return memo[id];
+  const totals = {};
+  const seen = {};
+  (function visit(nid) {
+    if (seen[nid] || !nodes[nid]) return;
+    seen[nid] = true;
+    const own = state.done[nid] ? null : (state.costs && state.costs[nid]) || null;
+    if (own) {
+      Object.keys(own).forEach(cid => {
+        const amount = Number(own[cid]) || 0;
+        if (amount > 0) totals[cid] = (totals[cid] || 0) + amount;
+      });
+    }
+    nodes[nid].childIds.forEach(visit);
+  })(id);
+  if (memo) memo[id] = totals;
+  return totals;
+}
+
+// Aggregates every goal cost into per-currency totals:
+// { currencyId: { id, name, bankName, held, required, remaining, goals: [...] } }
+// `required` counts every goal in the graph, `remaining` only the not-done ones.
+// `nodes` is already pruned, so hidden goals do not contribute.
+function currencyTotals(nodes) {
+  const out = {};
+  const registry = state.currencies || {};
+  const costs = state.costs || {};
+
+  function row(cid) {
+    if (!out[cid]) {
+      const c = registry[cid] || {};
+      out[cid] = {
+        id: cid, name: c.name || cid, bankName: c.bankName || c.name || cid,
+        held: Number(c.held) || 0, required: 0, remaining: 0, goals: []
+      };
+    }
+    return out[cid];
+  }
+
+  // node.id is the effectiveId (the map key), so a shared goal is counted once
+  // however many parents it has.
+  Object.values(nodes).forEach(node => {
+    const nodeCosts = costs[node.id];
+    if (!nodeCosts) return;
+    Object.keys(nodeCosts).forEach(cid => {
+      const amount = Number(nodeCosts[cid]) || 0;
+      if (amount <= 0) return;
+      const r = row(cid);
+      const done = !!state.done[node.id];
+      r.required += amount;
+      if (!done) r.remaining += amount;
+      r.goals.push({ id: node.id, title: node.title, amount, done });
+    });
+  });
+
+  // Registered currencies with no spending goal still show, so one does not
+  // vanish from the panel the moment its last goal is hidden or deleted.
+  Object.keys(registry).forEach(row);
+  Object.values(out).forEach(r => r.goals.sort((a, b) => b.amount - a.amount || a.title.localeCompare(b.title)));
+  return out;
+}
+
 // --- Icon rendering ----------------------------------------------------------
 
 // Every render rebuilds the whole chart, and a brand new <img> paints blank for

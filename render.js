@@ -13,6 +13,11 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 let currentNodes = {};
 let lastColumns = {}, lastRows = {}, lastVisibleIds = [], lastDiscoveryOrder = {}, lastRootOrder = [], lastNodeBlock = {};
 let hideCompleted = false, hideIncomplete = false;
+let costMemo = {};
+// Per-block row tops and per-node heights from the last relayout pass; nodes
+// with wrapped footers make their row taller, so rows are no longer on a fixed
+// ROW_H pitch. Drag & drop reads these through rowTopIn().
+let lastRowTops = {}, lastNodeHeights = {};
 
 function getGraph() {
   const { tree } = getEffectiveTree();
@@ -35,6 +40,8 @@ function renderUnsafe() {
   const { nodes, discoveryOrder } = getGraph();
   currentNodes = nodes;
   lastDiscoveryOrder = discoveryOrder;
+  costMemo = {}; // subtree cost totals are only valid for this pass
+  const blockLayouts = [];
 
   const rsnEl = document.getElementById("rsnInput");
   if (rsnEl && document.activeElement !== rsnEl) rsnEl.value = state.username || "";
@@ -126,39 +133,10 @@ function renderUnsafe() {
       cy: rows[id] * ROW_H + PAD + NODE_H / 2
     });
 
-    subIds.forEach(id => {
-      sub[id].childIds.forEach(cid => {
-        const from = center(cid);
-        const to = center(id);
-        const x1 = from.cx + NODE_W, y1 = from.cy;
-        const x2 = to.cx, y2 = to.cy;
-        const dx = Math.max(40, (x2 - x1) / 2);
-        const path = document.createElementNS(SVG_NS, "path");
-        path.setAttribute("d", `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`);
-        path.setAttribute("class", "edge");
-        path.setAttribute("marker-end", "url(#arrowhead)");
-        path.dataset.from = cid;
-        path.dataset.to = id;
-        svg.appendChild(path);
-
-        // Two grab handles per edge, both reparenting this child (drag onto
-        // another node to move it under that node). One sits at the parent end
-        // (the arrowhead) and one at the child end (the start). A goal with many
-        // children stacks every child's parent-end handle at the one parent, so
-        // the child-end handle, which is unique per child, stays grabbable.
-        [[x2 - 6, y2], [x1 + 6, y1]].forEach(([hx, hy]) => {
-          const handle = document.createElementNS(SVG_NS, "circle");
-          handle.setAttribute("cx", hx);
-          handle.setAttribute("cy", hy);
-          handle.setAttribute("r", 7);
-          handle.setAttribute("class", "edge-handle");
-          handle.addEventListener("pointerdown", e => startEdgeRetarget(e, cid, id, svg, handle, x1, y1));
-          svg.appendChild(handle);
-        });
-      });
-    });
+    drawBlockEdges(svg, sub, subIds, center);
     blockEl.appendChild(svg);
 
+    const els = {};
     subIds.forEach(id => {
       const node = nodes[id];
       const { cx, cy } = center(id);
@@ -166,7 +144,13 @@ function renderUnsafe() {
       el.style.left = cx + "px";
       el.style.top = (cy - NODE_H / 2) + "px";
       blockEl.appendChild(el);
+      els[id] = el;
     });
+
+    // Positions above assume every node is NODE_H tall. A node whose footer
+    // wraps is taller, but heights are only measurable once this is in the
+    // document, so record what relayoutBlocks needs for the second pass.
+    blockLayouts.push({ rootId, sub, subIds, columns, rows, svg, blockEl, els });
 
     container.appendChild(blockEl);
   }
@@ -255,12 +239,138 @@ function renderUnsafe() {
 
   chartEl.innerHTML = "";
   chartEl.appendChild(flowEl);
+  // Now in the document, so node heights can be measured and rows restacked.
+  relayoutBlocks(blockLayouts);
   lastColumns = mergedColumns;
   lastRows = mergedRows;
   lastNodeBlock = nodeBlock;
 
   applyFilter();
   updateOverallProgress(nodes);
+  // Defined in currency-ui.js, which loads later; keeps an open ledger in step
+  // with goals being ticked off behind it.
+  if (typeof refreshCurrencyPanel === "function") refreshCurrencyPanel();
+}
+
+// Draws every edge in a block, plus the two drag handles per edge. Shared by
+// the initial render and the post-measure relayout, which redraws with the real
+// node heights.
+function drawBlockEdges(svg, sub, subIds, center) {
+  // Keep the <defs> (arrowhead marker), drop any previously drawn edges.
+  [...svg.querySelectorAll("path.edge, circle.edge-handle")].forEach(el => el.remove());
+  subIds.forEach(id => {
+    sub[id].childIds.forEach(cid => {
+      const from = center(cid);
+      const to = center(id);
+      const x1 = from.cx + NODE_W, y1 = from.cy;
+      const x2 = to.cx, y2 = to.cy;
+      const dx = Math.max(40, (x2 - x1) / 2);
+      const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("d", `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`);
+      path.setAttribute("class", "edge");
+      path.setAttribute("marker-end", "url(#arrowhead)");
+      path.dataset.from = cid;
+      path.dataset.to = id;
+      svg.appendChild(path);
+
+      // Two grab handles per edge, both reparenting this child (drag onto
+      // another node to move it under that node). One sits at the parent end
+      // (the arrowhead) and one at the child end (the start). A goal with many
+      // children stacks every child's parent-end handle at the one parent, so
+      // the child-end handle, which is unique per child, stays grabbable.
+      [[x2 - 6, y2], [x1 + 6, y1]].forEach(([hx, hy]) => {
+        const handle = document.createElementNS(SVG_NS, "circle");
+        handle.setAttribute("cx", hx);
+        handle.setAttribute("cy", hy);
+        handle.setAttribute("r", 7);
+        handle.setAttribute("class", "edge-handle");
+        handle.addEventListener("pointerdown", e => startEdgeRetarget(e, cid, id, svg, handle, x1, y1));
+        svg.appendChild(handle);
+      });
+    });
+  });
+}
+
+// Second layout pass, run once the chart is in the document (the only point node
+// heights can be measured). A node whose footer wrapped is taller than NODE_H,
+// so give each row the height of its tallest node and restack the rows below,
+// then redraw the edges against the new centers. Only the nodes that need the
+// space grow; everything else keeps NODE_H.
+function relayoutBlocks(layouts) {
+  lastRowTops = {};
+  lastNodeHeights = {};
+  layouts.forEach(L => {
+    const heights = {};
+    let anyTaller = false;
+    L.subIds.forEach(id => {
+      const el = L.els[id];
+      const h = el ? Math.round(el.getBoundingClientRect().height) : NODE_H;
+      heights[id] = Math.max(NODE_H, h);
+      if (heights[id] > NODE_H) anyTaller = true;
+    });
+    Object.assign(lastNodeHeights, heights);
+
+    const maxRow = Math.max(0, ...L.subIds.map(id => L.rows[id]));
+    const rowHeights = [];
+    for (let r = 0; r <= maxRow; r++) rowHeights[r] = NODE_H;
+    L.subIds.forEach(id => {
+      const r = L.rows[id];
+      if (heights[id] > rowHeights[r]) rowHeights[r] = heights[id];
+    });
+
+    const rowTops = [];
+    let y = PAD;
+    for (let r = 0; r <= maxRow; r++) {
+      rowTops[r] = y;
+      y += rowHeights[r] + GAP_Y;
+    }
+    lastRowTops[L.rootId] = rowTops;
+
+    // Nothing wrapped, so the uniform first-pass positions are already correct.
+    if (!anyTaller) return;
+
+    L.subIds.forEach(id => {
+      const el = L.els[id];
+      if (el) el.style.top = rowTops[L.rows[id]] + "px";
+    });
+
+    const center = id => ({
+      cx: L.columns[id] * COL_W + PAD,
+      cy: rowTops[L.rows[id]] + heights[id] / 2
+    });
+    drawBlockEdges(L.svg, L.sub, L.subIds, center);
+
+    const height = y - GAP_Y + PAD;
+    L.blockEl.style.height = height + "px";
+    L.svg.setAttribute("height", height);
+  });
+}
+
+// Top of a row within a block, honouring any rows made taller by wrapped
+// footers. Falls back to the uniform pitch before the first relayout.
+function rowTopIn(blockRootId, rowIndex) {
+  const tops = lastRowTops[blockRootId];
+  if (tops && tops[rowIndex] != null) return tops[rowIndex];
+  return rowIndex * ROW_H + PAD;
+}
+
+// A goal's costs for display: its own plus everything in its subtree, so a
+// parent shows what finishing the whole branch costs. `rolledUp` marks a total
+// that includes sub-goals, which the chip styles and explains differently.
+// [{ name, amount, short, rolledUp }], empty when nothing in the branch costs.
+function costPartsOf(id) {
+  const totals = subtreeCosts(id, currentNodes, costMemo);
+  // A done goal's own cost is already spent, so anything left is the sub-goals'.
+  const own = (!state.done[id] && state.costs && state.costs[id]) || {};
+  return Object.keys(totals).map(cid => {
+    const amount = totals[cid];
+    if (amount <= 0) return null;
+    const name = (state.currencies[cid] && state.currencies[cid].name) || cid;
+    return {
+      name, amount, short: `${formatCurrencyAmount(amount)} ${name}`,
+      rolledUp: (Number(own[cid]) || 0) !== amount
+    };
+  }).filter(Boolean).sort((a, b) => b.amount - a.amount);
 }
 
 function updateOverallProgress(nodes) {
@@ -387,8 +497,13 @@ function renderGraphNode(node, progressMemo, statusMemo, opts) {
   // Compact mode: icon only; every action moves to the right-click menu.
   if (compact) {
     div.classList.add("compact-node");
-    div.title = node.title + (hasChildren ? ` (${progress.completed}/${progress.total})` : "");
+    // Icon-only, so costs join the tooltip rather than adding a chip.
+    const costParts = costPartsOf(node.id);
+    div.title = node.title + (hasChildren ? ` (${progress.completed}/${progress.total})` : "")
+      + (costParts.length ? " — costs " + costParts.map(p => `${p.amount} ${p.name}`).join(", ")
+          + (costParts.some(p => p.rolledUp) ? " (including sub-goals)" : "") : "");
     div.appendChild(renderIcon(node, "icon-slot-compact"));
+    if (costParts.length) div.classList.add("has-cost");
     if (node.type === "skill") {
       const req = typeof parseSkillRequirement === "function" ? parseSkillRequirement(node.title) : null;
       if (req) {
@@ -498,6 +613,16 @@ function renderGraphNode(node, progressMemo, statusMemo, opts) {
     prog.textContent = `${progress.completed}/${progress.total}`;
     footer.appendChild(prog);
   }
+
+  costPartsOf(node.id).forEach(part => {
+    const chip = document.createElement("span");
+    chip.className = "cost-badge" + (part.rolledUp ? " rolled-up" : "");
+    chip.textContent = part.short;
+    chip.title = part.rolledUp
+      ? `${part.amount} ${part.name} for this goal and its sub-goals`
+      : `Costs ${part.amount} ${part.name}`;
+    footer.appendChild(chip);
+  });
 
   if (node.parentIds.length > 1) {
     const badge = document.createElement("span");

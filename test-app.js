@@ -65,7 +65,7 @@ function makeContext() {
   vm.createContext(ctx);
   for (const f of ["theme.js", "migration.js", "data.js", "templates.js", "state.js", "graph.js",
     "render.js", "dragdrop.js", "edges-menu.js", "modals.js", "profiles-ui.js",
-    "templates-ui.js", "sync.js", "app.js"]) {
+    "templates-ui.js", "sync.js", "currency-ui.js", "app.js"]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, f), "utf8"), ctx, { filename: f });
   }
   return ctx;
@@ -81,6 +81,7 @@ function inCtx(body) {
     state.customNodes = {}; state.linkedEdges = {}; state.removedEdges = {};
     state.rootGoals = {}; state.order = {}; state.collapsed = {};
     state.done = {}; state.overrides = {}; state.removed = {}; state.groupsState = null;
+    state.currencies = {}; state.costs = {}; state.bank = {};
     const R = (function(){ ${body} })();
     return JSON.parse(JSON.stringify(R));
   })()`;
@@ -1013,6 +1014,215 @@ test("applyTheme persists a known theme and falls back to the default", () => {
   assert.strictEqual(r.bogus, "default", "an unknown theme falls back to default");
   assert.strictEqual(r.afterBogus, "default", "the fallback is what gets stored");
   assert.ok(r.count >= 4, "at least the default plus three alternatives exist");
+});
+
+console.log("\nCurrency totals");
+
+test("two goals costing the same currency sum instead of collapsing", () => {
+  // The whole point: a shared "40 marks" sub-goal node would read as 40, because
+  // effectiveId collapses it to one node. Per-goal costs give the real 80.
+  const r = inCtx(`
+    addCustomChild(null, "Graceful boots", { type: "quest" });
+    addCustomChild(null, "Graceful cape", { type: "quest" });
+    const [A, B] = Object.keys(state.customNodes);
+    writeGoalCosts(A, { "mark-of-grace": { name: "Mark of grace", amount: 40 } }, "item");
+    writeGoalCosts(B, { "mark-of-grace": { name: "Mark of grace", amount: 40 } }, "item");
+    const t = currencyTotals(getGraph().nodes)["mark-of-grace"];
+    return { required: t.required, remaining: t.remaining, goals: t.goals.length, name: t.name };
+  `);
+  assert.strictEqual(r.required, 80, "40 + 40 must total 80, not 40");
+  assert.strictEqual(r.remaining, 80, "nothing is done yet");
+  assert.strictEqual(r.goals, 2, "both goals are listed as spenders");
+  assert.strictEqual(r.name, "Mark of grace", "the display name comes from the registry");
+});
+
+test("completing one goal lowers remaining but not required", () => {
+  const r = inCtx(`
+    addCustomChild(null, "Graceful boots", { type: "quest" });
+    addCustomChild(null, "Graceful cape", { type: "quest" });
+    const [A, B] = Object.keys(state.customNodes);
+    writeGoalCosts(A, { "mark-of-grace": { name: "Mark of grace", amount: 40 } }, "item");
+    writeGoalCosts(B, { "mark-of-grace": { name: "Mark of grace", amount: 40 } }, "item");
+    state.done[A] = true;
+    const t = currencyTotals(getGraph().nodes)["mark-of-grace"];
+    return { required: t.required, remaining: t.remaining };
+  `);
+  assert.strictEqual(r.required, 80, "required still counts every goal");
+  assert.strictEqual(r.remaining, 40, "only what is left to buy");
+});
+
+test("a hidden goal stops contributing, and a shared goal counts once", () => {
+  const r = inCtx(`
+    addCustomChild(null, "Graceful boots", { type: "quest" });
+    addCustomChild(null, "Graceful cape", { type: "quest" });
+    addCustomChild(null, "Parent", { type: "quest" });
+    const [A, B, P] = Object.keys(state.customNodes);
+    writeGoalCosts(A, { "mark-of-grace": { name: "Mark of grace", amount: 40 } }, "item");
+    writeGoalCosts(B, { "mark-of-grace": { name: "Mark of grace", amount: 40 } }, "item");
+    // Give A a second parent: it is still one node, so it must not double-count.
+    addLinkedChild(P, A);
+    const shared = currencyTotals(getGraph().nodes)["mark-of-grace"].required;
+    state.removed[B] = true;
+    const afterHide = currencyTotals(getGraph().nodes)["mark-of-grace"].required;
+    return { shared, afterHide };
+  `);
+  assert.strictEqual(r.shared, 80, "a goal with two parents is still counted once");
+  assert.strictEqual(r.afterHide, 40, "a hidden goal drops out of the totals");
+});
+
+test("writeGoalCosts registers the currency and drops non-positive amounts", () => {
+  const r = inCtx(`
+    addCustomChild(null, "Goal", { type: "quest" });
+    const A = Object.keys(state.customNodes)[0];
+    writeGoalCosts(A, { "coins": { name: "Coins", amount: 1000 } }, "item");
+    const registered = !!state.currencies["coins"];
+    writeGoalCosts(A, { "coins": { name: "Coins", amount: 0 } }, "item");
+    return { registered, cleared: !state.costs[A], slug: currencySlug("Mark of Grace") };
+  `);
+  assert.strictEqual(r.registered, true, "naming a currency registers it");
+  assert.strictEqual(r.cleared, true, "a zero amount removes the goal's costs entry");
+  assert.strictEqual(r.slug, "mark-of-grace", "names slug to a stable id");
+});
+
+test("a bank upload refreshes held only for currencies it mentions", () => {
+  const r = inCtx(`
+    ensureCurrency("Mark of grace");
+    ensureCurrency("Chaos rune");
+    state.currencies["chaos-rune"].held = 7; // typed by hand, not in the export
+    state.bank = parseBankMemory("1234\\tMark of grace\\t62");
+    const changed = refreshCurrencyHeld();
+    return { changed, marks: state.currencies["mark-of-grace"].held, chaos: state.currencies["chaos-rune"].held };
+  `);
+  assert.strictEqual(r.changed, 1, "only the currency present in the export changes");
+  assert.strictEqual(r.marks, 62, "held is refreshed from the bank quantity");
+  assert.strictEqual(r.chaos, 7, "a currency absent from the export keeps its manual value");
+});
+
+test("parseAmount reads k/m/b suffixes and rejects junk", () => {
+  const r = inCtx(`
+    return {
+      plain: parseAmount("40"), k: parseAmount("120k"), upperK: parseAmount("120K"),
+      m: parseAmount("1.5m"), b: parseAmount("2b"), commas: parseAmount("1,000"),
+      spaced: parseAmount(" 250k "), empty: parseAmount(""), junk: parseAmount("abc"),
+      trailing: parseAmount("12kk"), zero: parseAmount("0")
+    };
+  `);
+  assert.strictEqual(r.plain, 40);
+  assert.strictEqual(r.k, 120000, "120k is 120000");
+  assert.strictEqual(r.upperK, 120000, "the suffix is case-insensitive");
+  assert.strictEqual(r.m, 1500000, "1.5m is 1500000");
+  assert.strictEqual(r.b, 2000000000, "2b is 2000000000");
+  assert.strictEqual(r.commas, 1000, "thousands separators are ignored");
+  assert.strictEqual(r.spaced, 250000);
+  assert.strictEqual(r.empty, null, "nothing typed is null, not 0");
+  assert.strictEqual(r.junk, null);
+  assert.strictEqual(r.trailing, null, "a doubled suffix is not silently accepted");
+  assert.strictEqual(r.zero, 0, "an explicit 0 parses (callers reject it separately)");
+});
+
+test("a parent node totals the costs of its whole subtree", () => {
+  const r = inCtx(`
+    addCustomChild(null, "Parent", { type: "quest" });
+    const P = Object.keys(state.customNodes)[0];
+    addCustomChild(P, "Boots", { type: "item", costs: { "mark-of-grace": { name: "Mark of grace", amount: 40 } } });
+    addCustomChild(P, "Cape", { type: "item", costs: { "mark-of-grace": { name: "Mark of grace", amount: 40 } } });
+    const nodes = getGraph().nodes;
+    const kids = Object.keys(state.customNodes).filter(id => id !== P);
+    return {
+      parent: subtreeCosts(P, nodes, {})["mark-of-grace"],
+      child: subtreeCosts(kids[0], nodes, {})["mark-of-grace"],
+      ledger: currencyTotals(nodes)["mark-of-grace"].required
+    };
+  `);
+  assert.strictEqual(r.parent, 80, "the parent shows the branch total");
+  assert.strictEqual(r.child, 40, "a leaf still shows only its own cost");
+  assert.strictEqual(r.ledger, 80, "the rollup is display-only, so the ledger is unchanged");
+});
+
+test("completing a sub-goal lowers the parent's subtree total", () => {
+  const r = inCtx(`
+    addCustomChild(null, "Parent", { type: "quest" });
+    const P = Object.keys(state.customNodes)[0];
+    addCustomChild(P, "Boots", { type: "item", costs: { "mark-of-grace": { name: "Mark of grace", amount: 40 } } });
+    addCustomChild(P, "Cape", { type: "item", costs: { "mark-of-grace": { name: "Mark of grace", amount: 40 } } });
+    const kids = Object.keys(state.customNodes).filter(id => id !== P);
+    const nodes = getGraph().nodes;
+    const at = () => subtreeCosts(P, nodes, {})["mark-of-grace"];
+    const before = at();
+    state.done[kids[0]] = true;
+    const afterOne = at();
+    state.done[kids[1]] = true;
+    const afterBoth = at();
+    // A done goal shows nothing of its own either.
+    const doneChildOwn = subtreeCosts(kids[0], nodes, {})["mark-of-grace"];
+    return { before, afterOne, afterBoth, doneChildOwn };
+  `);
+  assert.strictEqual(r.before, 80);
+  assert.strictEqual(r.afterOne, 40, "finishing one child drops its cost from the parent");
+  assert.strictEqual(r.afterBoth, undefined, "with everything done the parent shows no cost");
+  assert.strictEqual(r.doneChildOwn, undefined, "a done goal's own cost is already spent");
+});
+
+test("an unfinished goal under a finished one still counts", () => {
+  // Linking can leave a todo goal beneath a done one, so the walk must not stop
+  // at a done node.
+  const r = inCtx(`
+    addCustomChild(null, "Parent", { type: "quest" });
+    const P = Object.keys(state.customNodes)[0];
+    addCustomChild(P, "Mid", { type: "quest" });
+    const M = Object.keys(state.customNodes).filter(id => id !== P)[0];
+    addCustomChild(M, "Boots", { type: "item", costs: { "coins": { name: "Coins", amount: 1000 } } });
+    state.done[M] = true; // done parent, unfinished child below it
+    return { total: subtreeCosts(P, getGraph().nodes, {})["coins"] };
+  `);
+  assert.strictEqual(r.total, 1000, "the unfinished descendant still contributes");
+});
+
+test("a goal reachable by two paths is counted once in a subtree total", () => {
+  const r = inCtx(`
+    addCustomChild(null, "Parent", { type: "quest" });
+    const P = Object.keys(state.customNodes)[0];
+    addCustomChild(P, "Mid", { type: "quest" });
+    const M = Object.keys(state.customNodes).filter(id => id !== P)[0];
+    addCustomChild(M, "Boots", { type: "item", costs: { "coins": { name: "Coins", amount: 1000 } } });
+    const B = Object.keys(state.customNodes).filter(id => id !== P && id !== M)[0];
+    addLinkedChild(P, B); // now reachable as both P->Mid->Boots and P->Boots
+    const nodes = getGraph().nodes;
+    return { total: subtreeCosts(P, nodes, {})["coins"], paths: nodes[B].parentIds.length };
+  `);
+  assert.strictEqual(r.paths, 2, "the goal really does have two parents");
+  assert.strictEqual(r.total, 1000, "but its cost is counted once, not twice");
+});
+
+test("only item goals keep costs", () => {
+  const r = inCtx(`
+    addCustomChild(null, "Boots", { type: "item", costs: { "coins": { name: "Coins", amount: 500 } } });
+    const A = Object.keys(state.customNodes)[0];
+    const asItem = !!state.costs[A];
+    // A quest goal offered the same costs must not store them.
+    addCustomChild(null, "Quest", { type: "quest", costs: { "coins": { name: "Coins", amount: 500 } } });
+    const B = Object.keys(state.customNodes).filter(id => id !== A)[0];
+    const asQuest = !!state.costs[B];
+    // Switching an item away from "item" drops what it had.
+    writeGoalCosts(A, { "coins": { name: "Coins", amount: 500 } }, "other");
+    return { asItem, asQuest, afterSwitch: !!state.costs[A], hasCosts: goalTypeHasCosts("item") };
+  `);
+  assert.strictEqual(r.asItem, true, "an item goal stores its costs");
+  assert.strictEqual(r.asQuest, false, "a non-item goal never stores costs");
+  assert.strictEqual(r.afterSwitch, false, "switching type away from item clears them");
+  assert.strictEqual(r.hasCosts, true);
+});
+
+test("costs never gate completion (the status model stays two-state)", () => {
+  const r = inCtx(`
+    addCustomChild(null, "Goal", { type: "quest" });
+    const A = Object.keys(state.customNodes)[0];
+    writeGoalCosts(A, { "coins": { name: "Coins", amount: 1000000 } }, "item");
+    const nodes = getGraph().nodes;
+    return { unlocked: isUnlocked(A, nodes, {}), status: computeStatus(A, nodes, {}) };
+  `);
+  assert.strictEqual(r.unlocked, true, "an unaffordable goal is still tickable");
+  assert.strictEqual(r.status, "todo", "and costs do not change its status");
 });
 
 console.log("\n" + passed + " test(s) passed.");

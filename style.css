@@ -813,6 +813,9 @@ main#chart {
   position: relative;
   width: 62px;
   height: 62px;
+  /* Icon only, so it never wraps: cancel the base rule's min-height, which
+     would otherwise win over the 62px above and square these up to 96px. */
+  min-height: 0;
   padding: 0;
   display: flex;
   align-items: center;
@@ -936,7 +939,9 @@ main#chart {
 .graph-node {
   position: absolute;
   width: 210px;
-  height: 96px;
+  /* Grows only when its footer wraps (many cost pills); relayoutBlocks measures
+     the result and gives that row the extra space. */
+  min-height: 96px;
   box-sizing: border-box;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -1119,6 +1124,10 @@ main#chart {
   align-items: center;
   gap: 5px;
   flex-shrink: 0;
+  /* Pills used to overflow the fixed height and push the edit/+ controls out of
+     reach; wrapping keeps every pill and control reachable. */
+  flex-wrap: wrap;
+  row-gap: 3px;
 }
 
 .graph-node-progress {
@@ -1169,6 +1178,236 @@ main#chart {
   border-radius: 10px;
   padding: 0px 6px;
   white-space: nowrap;
+}
+
+.cost-badge {
+  background: var(--bg-panel);
+  border: 1px solid var(--type-item);
+  color: var(--type-item);
+  font-size: 0.62rem;
+  border-radius: 10px;
+  padding: 0px 6px;
+  white-space: nowrap;
+}
+
+/* A total that includes sub-goals, rather than this goal's own price. */
+.cost-badge.rolled-up {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+/* Compact (tier group) nodes are icon-only, so a cost shows as a corner dot;
+   the amount itself lives in the tooltip. Uses ::before because ::after already
+   carries the done ✓ / locked 🔒 markers. */
+.compact-node.has-cost::before {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--type-item);
+  box-shadow: 0 0 0 1px var(--bg-panel);
+  pointer-events: none;
+}
+
+/* Costs section in the goal modal (item goals only). */
+.goal-costs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 10px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.goal-cost-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Gap and trailing-control width match .goal-cost-add below, so the amount
+   column lines up between existing rows and the add row. */
+.goal-cost-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 0 4px 10px;
+}
+
+.goal-cost-row .goal-link-remove {
+  width: 40px;
+  flex-shrink: 0;
+}
+
+.goal-cost-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* There is no global input rule in this file (fields are styled per id/class),
+   so the costs fields need the shared look spelled out or they render as raw
+   browser defaults. */
+.goal-costs input {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 8px;
+  font-size: 0.82rem;
+  box-sizing: border-box;
+  margin-top: 0;
+}
+
+.goal-costs input:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.goal-costs input::placeholder {
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+
+.goal-cost-add {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.goal-cost-add #goalCostName {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Amount fields are numeric and short, so they get a fixed width and sit
+   right-aligned; they are text inputs because of the k/m/b suffixes. */
+.goal-cost-amount,
+.goal-cost-add #goalCostAmount {
+  width: 6.5rem;
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Buttons are only styled via ".modal-actions button" in this file, so this one
+   needs the look spelled out (same reason as .goal-costs input above). */
+.goal-cost-add-btn {
+  flex-shrink: 0;
+  align-self: stretch;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.goal-cost-add-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+.goal-cost-empty {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* Currency ledger popover. */
+.currency-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 260px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.currency-row {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 8px;
+}
+
+.currency-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.currency-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--gold-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The panel lives inside .toolbar, whose ".toolbar input" rule is more specific
+   than a lone class and would otherwise force flex:1 and min-width:180px onto
+   this field. Qualify with the list to win. */
+.currency-list .currency-held {
+  width: 5.5rem;
+  min-width: 0;
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 5px 7px;
+  box-sizing: border-box;
+}
+
+.currency-list .currency-held:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.currency-need {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.currency-need.met { color: var(--green); }
+
+.currency-sub {
+  margin-top: 3px;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.currency-goal {
+  margin-top: 2px;
+  padding-left: 8px;
+  font-size: 0.72rem;
+  color: var(--text);
+}
+
+.currency-goal.done {
+  color: var(--text-dim);
+  text-decoration: line-through;
 }
 
 .legend {

@@ -32,6 +32,7 @@ const POPOVERS = [
   ["syncMenuBtn", "syncMenu"],
   ["questMenuBtn", "questMenu"],
   ["bankMenuBtn", "bankMenu"],
+  ["currencyMenuBtn", "currencyMenu"],
 ];
 function closeAllPopovers(exceptMenu) {
   for (const [btnId, menuId] of POPOVERS) {

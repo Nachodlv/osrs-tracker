@@ -94,6 +94,23 @@ function applyBankSync() {
   return changed;
 }
 
+// Refresh each currency's held amount from the bank just loaded, matching on the
+// same normalized name as item goals. A currency the export does not mention (or
+// one with no bank equivalent, like a token) keeps whatever the user typed, so
+// this is a refresh rather than a takeover. Returns how many changed.
+function refreshCurrencyHeld() {
+  let changed = 0;
+  Object.values(state.currencies || {}).forEach(c => {
+    const key = normalizeItemName(c.bankName || c.name);
+    if (!key || !(key in state.bank)) return;
+    const qty = state.bank[key];
+    if (c.held === qty) return;
+    c.held = qty;
+    changed++;
+  });
+  return changed;
+}
+
 // --- RuneProfile sync -----------------------------------------------------------
 // RuneProfile (RuneLite plugin + public API at api.runeprofile.com) exposes a
 // player's skills and per-quest completion by username, CORS-open so the browser
@@ -319,6 +336,7 @@ bankApplyBtnEl.addEventListener("click", async () => {
   }
   const mode = (document.querySelector('input[name="bankMode"]:checked') || {}).value || "replace";
   let changed = 0;
+  let currenciesChanged = 0;
   withUndo("Applied bank memory", () => {
     if (mode === "add") {
       Object.keys(parsed).forEach(k => { state.bank[k] = (state.bank[k] || 0) + parsed[k]; });
@@ -326,12 +344,14 @@ bankApplyBtnEl.addEventListener("click", async () => {
       state.bank = parsed;
     }
     changed = applyBankSync();
+    currenciesChanged = refreshCurrencyHeld();
     saveState();
     render();
   });
   bankFileInputEl.value = "";
   bankPasteInputEl.value = "";
   bankStatusTextEl.textContent = `Loaded ${count} item${count === 1 ? "" : "s"} — ` +
-    (changed ? `${changed} goal${changed === 1 ? "" : "s"} completed` : "no new goals completed");
+    (changed ? `${changed} goal${changed === 1 ? "" : "s"} completed` : "no new goals completed") +
+    (currenciesChanged ? `, ${currenciesChanged} currenc${currenciesChanged === 1 ? "y" : "ies"} updated` : "");
   bankStatusTextEl.className = "sync-status success";
 });

@@ -189,6 +189,26 @@ test("remaps the Ladlord spirit-tree / hallowed-shard rename, sub-goals included
   assert.deepStrictEqual(m.rootGoals, { "hallowed-crystal-shard.sepulchre.sins": true });
 });
 
+test("remaps goal ids in costs, leaving currency ids and amounts alone", () => {
+  const save = {
+    costs: {
+      "spirit-tree": { "mark-of-grace": 40 },
+      "herb-run.weiss.arm": { "coins": 1000 } // unrenamed, must survive
+    },
+    currencies: { "mark-of-grace": { id: "mark-of-grace", name: "Mark of grace", held: 62 } }
+  };
+  const m = migrateStateData(save);
+  assert.deepStrictEqual(m.costs["spirit-tree-construction"], { "mark-of-grace": 40 },
+    "the goal id migrates, the currency id and amount do not");
+  assert.deepStrictEqual(m.costs["herb-run.weiss.arm"], { "coins": 1000 });
+  assert.ok(!("spirit-tree" in m.costs), "old goal id must be gone");
+  assert.strictEqual(m.currencies["mark-of-grace"].held, 62, "the registry is untouched");
+
+  // Idempotent: the eager startup pass runs this on every load.
+  const again = migrateStateData(JSON.parse(JSON.stringify(m)));
+  assert.deepStrictEqual(again.costs, m.costs, "re-running must be a no-op");
+});
+
 test("handles a missing/undefined state gracefully (no crash)", () => {
   assert.strictEqual(migrateStateData(null), null);
   assert.strictEqual(migrateStateData(undefined), undefined);

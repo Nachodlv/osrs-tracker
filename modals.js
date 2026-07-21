@@ -87,6 +87,8 @@ function updateFieldHints() {
     linkQueryHint.textContent = "(optional — leave blank to auto-search using the name)";
     linkQueryInput.placeholder = "e.g. Eagles' Peak";
   }
+  // Only an item is bought, so only an item carries a cost (currency-ui.js).
+  syncGoalCostsVisibility(type);
 }
 
 let previewGeneration = 0;
@@ -151,7 +153,9 @@ function currentGoalFields() {
     iconQuery: iconQueryInput.value.trim(),
     linkQuery: linkQueryInput.value.trim(),
     linkDisabled: linkDisabledCheckbox.checked,
-    description: descriptionInput.value.trim()
+    description: descriptionInput.value.trim(),
+    // { currencyId: { name, amount } }, from currency-ui.js.
+    costs: currentGoalCosts()
   };
 }
 
@@ -162,6 +166,7 @@ function resetGoalModalFields() {
   linkQueryInput.value = "";
   linkDisabledCheckbox.checked = false;
   descriptionInput.value = "";
+  resetGoalCosts();
   updateFieldHints();
   setIconPreview(null, "—");
   linkPreviewEl.textContent = "—";
@@ -188,6 +193,7 @@ function fillGoalFieldsFromNode(node) {
   linkQueryInput.value = source.linkQuery || "";
   linkDisabledCheckbox.checked = !!source.linkDisabled;
   descriptionInput.value = node.description || "";
+  fillGoalCosts(node.id);
   setIconPreview(node.iconUrl || (typeof resolveIconFile === "function" && resolveIconFile(node) ? WIKI_ICON_BASE + encodeURIComponent(resolveIconFile(node)) : null), "—");
   linkPreviewEl.textContent = source.linkDisabled ? "No wiki link" : (node.link ? "→ " + (node.note || node.title) : "—");
 }
@@ -415,7 +421,8 @@ modalForm.addEventListener("submit", e => {
           iconQuery: iconQueryInput.value.trim(),
           linkQuery: linkQueryInput.value.trim(),
           linkDisabled: linkDisabledCheckbox.checked,
-          description: descriptionInput.value.trim()
+          description: descriptionInput.value.trim(),
+          costs: currentGoalCosts()
         });
       }
     } else if (goalMode === "edit") {
@@ -442,6 +449,7 @@ function addCustomChild(parentId, title, opts) {
     if (opts.linkQuery) state.customNodes[id].linkQuery = opts.linkQuery;
     if (opts.description) state.customNodes[id].description = opts.description;
     state.customNodes[id].linkDisabled = !!opts.linkDisabled;
+    writeGoalCosts(id, opts.costs, opts.type || "other");
     if (parentId) state.collapsed[parentId] = false;
     saveState();
     render();
@@ -532,6 +540,7 @@ function saveGoalEdit(id, fields) {
     target.linkDisabled = fields.linkDisabled;
     target.description = fields.description || undefined;
     if (fields.linkDisabled) target.link = null;
+    writeGoalCosts(id, fields.costs, fields.type);
 
     saveState();
     render();
@@ -562,6 +571,7 @@ function removeGoal(id) {
       delete state.overrides[id];
     }
     delete state.done[id];
+    if (state.costs) delete state.costs[id];
     if (state.rootGoals) delete state.rootGoals[id];
     saveState();
     render();

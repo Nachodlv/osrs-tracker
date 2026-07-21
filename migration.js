@@ -169,6 +169,8 @@ function migrateStateData(parsed) {
   if (parsed.removed) parsed.removed = remapKeyedObject(parsed.removed);
   if (parsed.rootGoals) parsed.rootGoals = remapKeyedObject(parsed.rootGoals);
   if (parsed.overrides) parsed.overrides = remapKeyedObject(parsed.overrides);
+  // Outer key only: the inner keys are currency ids, not node ids.
+  if (parsed.costs) parsed.costs = remapKeyedObject(parsed.costs);
   if (parsed.customNodes) {
     Object.values(parsed.customNodes).forEach(custom => {
       if (custom && custom.parentId) custom.parentId = remapId(custom.parentId);

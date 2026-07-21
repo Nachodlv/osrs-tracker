@@ -490,15 +490,18 @@ function showChildReorderGhost(order) {
   const canvasRect = canvas.getBoundingClientRect();
   const col = lastColumns[dragSourceChildId];
   ghost.style.left = (canvasRect.left + col * COL_W + PAD) + "px";
-  ghost.style.top = (canvasRect.top + rows[dragSourceChildId] * ROW_H + PAD) + "px";
+  // Rows are not on a fixed pitch once a node's footer wraps, so ask the
+  // renderer where each row actually starts.
+  const block = lastNodeBlock[dragSourceChildId];
+  ghost.style.top = (canvasRect.top + rowTopIn(block, rows[dragSourceChildId])) + "px";
 
   Object.keys(rows).forEach(id => {
     if (id === dragSourceChildId) return;
-    const delta = rows[id] - lastRows[id];
-    if (!delta) return;
+    if (rows[id] === lastRows[id]) return;
     const el = findGraphNodeEl(canvas, id);
     if (el) {
-      el.style.transform = `translateY(${delta * ROW_H}px)`;
+      const delta = rowTopIn(lastNodeBlock[id], rows[id]) - rowTopIn(lastNodeBlock[id], lastRows[id]);
+      el.style.transform = `translateY(${delta}px)`;
       el.classList.add("drag-shift");
     }
   });

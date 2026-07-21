@@ -4,8 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Iron Tracker</title>
-<link rel="stylesheet" href="style.css?v=73" />
-<script src="theme.js?v=73"></script>
+<link rel="stylesheet" href="style.css?v=77" />
+<script src="theme.js?v=77"></script>
 </head>
 <body>
   <header class="topbar">
@@ -90,6 +90,13 @@
           <span id="bankStatusText" class="sync-status"></span>
         </div>
       </div>
+      <div class="popover-wrap currency-wrap">
+        <button id="currencyMenuBtn" title="Total resources your goals need" aria-haspopup="true" aria-expanded="false"><img class="btn-icon" src="https://oldschool.runescape.wiki/images/Coins_1000.png" alt="" aria-hidden="true" />Currencies</button>
+        <div id="currencyMenu" class="popover popover-right" hidden>
+          <p class="popover-note">How much each resource your goals need, added up. Held amounts are yours to edit and are refreshed by a bank upload.</p>
+          <div id="currencyList" class="currency-list"></div>
+        </div>
+      </div>
       </div>
     </div>
 
@@ -154,6 +161,17 @@
         Description <span class="modal-hint">(optional notes — shown when you open this goal)</span>
         <textarea id="goalDescription" rows="3" placeholder="e.g. Buy supplies from the GE first, then teleport to..."></textarea>
       </label>
+
+      <div id="goalCostsSection" class="goal-costs" hidden>
+        <div class="goal-links-title">Costs <span class="modal-hint">(what buying this item takes — totals add up across goals)</span></div>
+        <div id="goalCostRows" class="goal-cost-list"></div>
+        <div class="goal-cost-add">
+          <input id="goalCostName" type="text" autocomplete="off" list="currencyNameList" placeholder="Currency, e.g. Mark of grace" />
+          <input id="goalCostAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="40, 120k, 1.5m" title="Accepts k, m and b suffixes" />
+          <button type="button" id="goalCostAdd" class="goal-cost-add-btn">Add</button>
+        </div>
+        <datalist id="currencyNameList"></datalist>
+      </div>
 
       <div id="goalLinksSection" class="goal-links" hidden>
         <div class="goal-links-group">
@@ -252,18 +270,19 @@
     </div>
   </div>
 
-  <script src="migration.js?v=73"></script>
-  <script src="data.js?v=73"></script>
-  <script src="templates.js?v=73"></script>
-  <script src="state.js?v=73"></script>
-  <script src="graph.js?v=73"></script>
-  <script src="render.js?v=73"></script>
-  <script src="dragdrop.js?v=73"></script>
-  <script src="edges-menu.js?v=73"></script>
-  <script src="modals.js?v=73"></script>
-  <script src="profiles-ui.js?v=73"></script>
-  <script src="templates-ui.js?v=73"></script>
-  <script src="sync.js?v=73"></script>
-  <script src="app.js?v=73"></script>
+  <script src="migration.js?v=77"></script>
+  <script src="data.js?v=77"></script>
+  <script src="templates.js?v=77"></script>
+  <script src="state.js?v=77"></script>
+  <script src="graph.js?v=77"></script>
+  <script src="render.js?v=77"></script>
+  <script src="dragdrop.js?v=77"></script>
+  <script src="edges-menu.js?v=77"></script>
+  <script src="modals.js?v=77"></script>
+  <script src="profiles-ui.js?v=77"></script>
+  <script src="templates-ui.js?v=77"></script>
+  <script src="sync.js?v=77"></script>
+  <script src="currency-ui.js?v=77"></script>
+  <script src="app.js?v=77"></script>
 </body>
 </html>

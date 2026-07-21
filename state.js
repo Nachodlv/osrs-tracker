@@ -132,6 +132,13 @@ function defaultState() {
     // Uploaded bank memory: { normalizedItemName: quantity }. Used to auto-complete
     // "item" goals by name. No node ids, so it needs no migration remap.
     bank: {},
+    // Currencies several goals spend (marks of grace, GP). `held` is user-editable
+    // and refreshed by a bank upload. No node ids, so no migration remap.
+    // { currencyId: { id, name, bankName, held } }
+    currencies: {},
+    // What each goal costs: { nodeId: { currencyId: amount } }. Keyed by node id,
+    // so migrateStateData remaps it.
+    costs: {},
     // Built-in goals detached from every parent, promoted to standalone
     // top-level goals (kept alive past pruneRemoved). Keyed by node id.
     rootGoals: {},
@@ -159,7 +166,9 @@ function loadState() {
       skillSource: parsed.skillSource === "runeprofile" ? "runeprofile" : "hiscores",
       rootGoals: parsed.rootGoals || {},
       groupsState: parsed.groupsState || null,
-      bank: parsed.bank || {}
+      bank: parsed.bank || {},
+      currencies: parsed.currencies || {},
+      costs: parsed.costs || {}
     });
   } catch (e) {
     console.error("Failed to load tracker state", e);
