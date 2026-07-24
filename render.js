@@ -518,43 +518,12 @@ function renderGraphNode(node, progressMemo, statusMemo, opts) {
     return div;
   }
 
-  // A root inside a tier group has a fixed position there; reordering happens
-  // by dragging instead of the up/down buttons.
-  const isGroupedRoot = node.parentIds.length === 0 && getGroupOf(node.id) !== null;
-  if (!isGroupedRoot) {
-    const reorder = document.createElement("div");
-    reorder.className = "reorder-controls";
-    const upBtn = document.createElement("button");
-    upBtn.className = "reorder-btn";
-    upBtn.type = "button";
-    upBtn.textContent = "▲";
-    upBtn.title = "Move up";
-    upBtn.addEventListener("click", e => { e.stopPropagation(); moveNode(node.id, -1); });
-    const downBtn = document.createElement("button");
-    downBtn.className = "reorder-btn";
-    downBtn.type = "button";
-    downBtn.textContent = "▼";
-    downBtn.title = "Move down";
-    downBtn.addEventListener("click", e => { e.stopPropagation(); moveNode(node.id, 1); });
-    reorder.appendChild(upBtn);
-    reorder.appendChild(downBtn);
-    div.appendChild(reorder);
-  }
-
   const body = document.createElement("div");
   body.className = "graph-node-body";
   div.appendChild(body);
 
   const top = document.createElement("div");
   top.className = "graph-node-top";
-
-  if (hasChildren) {
-    const toggle = document.createElement("span");
-    toggle.className = "toggle";
-    toggle.textContent = isExpandedState(node.id) ? "▾" : "▸";
-    toggle.addEventListener("click", e => { e.stopPropagation(); toggleCollapse(node.id); });
-    top.appendChild(toggle);
-  }
 
   top.appendChild(renderIcon(node));
 

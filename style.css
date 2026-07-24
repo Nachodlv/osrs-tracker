@@ -1003,45 +1003,10 @@ main#chart {
   box-shadow: 0 0 0 1px var(--green), 0 4px 14px rgba(0,0,0,0.5);
 }
 
-.reorder-controls {
-  flex-shrink: 0;
-  width: 14px;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  align-items: center;
-  padding-top: 1px;
-}
-
-.reorder-btn {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-size: 0.55rem;
-  line-height: 1.6;
-  padding: 0;
-  width: 100%;
-}
-
-.reorder-btn:hover {
-  color: var(--gold-bright);
-}
-
 .graph-node-top {
   display: flex;
   align-items: center;
   gap: 5px;
-}
-
-.graph-node-top .toggle {
-  cursor: pointer;
-  width: 11px;
-  text-align: center;
-  color: var(--text-dim);
-  user-select: none;
-  font-size: 0.7rem;
-  flex-shrink: 0;
 }
 
 .graph-node-title {
@@ -2038,7 +2003,6 @@ footer {
   main#chart { margin: 12px; }
 
   .action-btn { font-size: 0.95rem; padding: 5px 9px; }
-  .reorder-btn { font-size: 0.7rem; }
   .edit-btn, button.add-link { font-size: 0.75rem; padding: 2px 7px; }
 
   .modal-card { width: calc(100vw - 32px); max-height: 86vh; overflow-y: auto; }
