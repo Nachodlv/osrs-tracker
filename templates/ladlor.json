@@ -1,8 +1,8 @@
 {
   "name": "Ironman Ladlord Chart",
   "source": "https://ladlorchart.com",
-  "version": 3,
-  "generatedAt": "2026-07-10T16:31:19.434Z",
+  "version": 4,
+  "generatedAt": "2026-08-05T14:13:50.401Z",
   "goalData": [
     {
       "id": "mixed-hide-boots",
@@ -629,6 +629,14 @@
       "children": []
     },
     {
+      "id": "gear.ghommal-s-hilt-3",
+      "title": "Ghommal's hilt 3",
+      "type": "item",
+      "icon": "Ghommal's_hilt_3.png",
+      "link": "https://oldschool.runescape.wiki/w/Ghommal's_hilt_3",
+      "children": []
+    },
+    {
       "id": "gear.amulet-of-torture",
       "title": "Amulet of torture",
       "type": "item",
@@ -682,6 +690,14 @@
       "type": "other",
       "icon": "Mystic_Vigour.png",
       "link": "https://oldschool.runescape.wiki/w/Mystic_Vigour",
+      "children": []
+    },
+    {
+      "id": "gear.necklace-of-rupture",
+      "title": "Necklace of rupture",
+      "type": "item",
+      "icon": "Necklace_of_rupture.png",
+      "link": "https://oldschool.runescape.wiki/w/Necklace_of_rupture",
       "children": []
     },
     {
@@ -1059,30 +1075,6 @@
       "icon": "Elidinis'_ward.png",
       "link": "https://oldschool.runescape.wiki/w/Elidinis'_ward",
       "children": []
-    },
-    {
-      "id": "gear.saturated-heart",
-      "title": "Saturated heart",
-      "type": "item",
-      "icon": "Saturated_heart.png",
-      "link": "https://oldschool.runescape.wiki/w/Saturated_heart",
-      "children": []
-    },
-    {
-      "id": "gear.zaryte-crossbow",
-      "title": "Zaryte crossbow",
-      "type": "item",
-      "icon": "Zaryte_crossbow.png",
-      "link": "https://oldschool.runescape.wiki/w/Zaryte_crossbow",
-      "children": []
-    },
-    {
-      "id": "gear.zaryte-vambraces",
-      "title": "Zaryte vambraces",
-      "type": "item",
-      "icon": "Zaryte_vambraces.png",
-      "link": "https://oldschool.runescape.wiki/w/Zaryte_vambraces",
-      "children": []
     }
   ],
   "gearGroups": [
@@ -1230,6 +1222,9 @@
       "gear.alchemist-s-amulet"
     ],
     [
+      "gear.ghommal-s-hilt-3"
+    ],
+    [
       "gear.amulet-of-torture",
       "gear.necklace-of-anguish",
       "gear.zamorakian-hasta",
@@ -1243,11 +1238,11 @@
       "gear.mystic-vigour"
     ],
     [
-      "gear.thread-of-elidinis",
-      "gear.lightbearer"
+      "gear.necklace-of-rupture"
     ],
     [
-      "gear.ghommal-s-hilt-4"
+      "gear.thread-of-elidinis",
+      "gear.lightbearer"
     ],
     [
       "gear.abyssal-whip",
@@ -1285,7 +1280,8 @@
       "gear.osmumten-s-fang"
     ],
     [
-      "gear.ferocious-gloves"
+      "gear.ferocious-gloves",
+      "gear.ghommal-s-hilt-4"
     ],
     [
       "gear.rigour",
@@ -1326,13 +1322,6 @@
       "gear.masori-chaps-f",
       "gear.masori-mask-f",
       "gear.elidinis-ward"
-    ],
-    [
-      "gear.saturated-heart"
-    ],
-    [
-      "gear.zaryte-crossbow",
-      "gear.zaryte-vambraces"
     ]
   ]
 }

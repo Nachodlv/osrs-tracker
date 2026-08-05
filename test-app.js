@@ -162,6 +162,26 @@ test("merging a template keeps single-member tier groups (not ungrouped at the s
   assert.strictEqual(r.singleMemberGrouped, true, "a single-member tier group must be kept");
 });
 
+test("a template group added mid-chart lands at its template position, not at the end", () => {
+  // Regression: addNewTemplateGroups pushed new groups onto groupOrder, so a
+  // goal the chart inserted mid-way (e.g. Ghommal's hilt 3) rendered far right.
+  const r = inCtx(`
+    currentNodes = getGraph().nodes;
+    ensureGroupsState();
+    const before = "gear.prescription-goggles"; // tier just before the new one
+    const after = "gear.amulet-of-torture";     // tier just after it
+    const newId = "gear.ghommal-s-hilt-3";
+    removeFromGroup(newId); // profile seeded before the template gained this tier
+    addNewTemplateGroups();
+    const pos = id => state.groupsState.groupOrder.indexOf(getGroupOf(id));
+    return { newPos: pos(newId), beforePos: pos(before), afterPos: pos(after),
+      last: state.groupsState.groupOrder.length - 1 };
+  `);
+  assert.ok(r.newPos > r.beforePos, "should come after the preceding tier");
+  assert.ok(r.newPos < r.afterPos, "should come before the following tier");
+  assert.notStrictEqual(r.newPos, r.last, "should not be appended at the end");
+});
+
 console.log("\nGraph invariants");
 
 test("computeVisibility hides a normal child whose only parent is collapsed", () => {

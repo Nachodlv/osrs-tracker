@@ -104,28 +104,47 @@ function groupSigMap(gearGroups) {
 // would never appear after an update. Existing groups and the user's own group
 // edits are left untouched; a template group is added only when it is genuinely
 // new (its member set is not already a group, and none of its members are
-// already placed in another group).
+// already placed in another group). A new group is inserted at its template
+// position (before the next template group the profile already has), not
+// appended, or a goal the chart added mid-way would render at the far right.
 function addNewTemplateGroups() {
   ensureGroupsState();
   const gs = state.groupsState;
-  const existingSigs = new Set(gs.groupOrder.map(gid => (gs.groups[gid] || []).slice().sort().join("|")));
-  const placed = new Set();
-  gs.groupOrder.forEach(gid => (gs.groups[gid] || []).forEach(m => placed.add(m)));
+  const sig = ids => ids.slice().sort().join("|");
+  const gidBySig = {};
+  const gidByMember = {};
+  gs.groupOrder.forEach(gid => {
+    const members = gs.groups[gid] || [];
+    gidBySig[sig(members)] = gid;
+    members.forEach(m => (gidByMember[m] = gid));
+  });
+  const templateGroups = (typeof GEAR_GROUPS !== "undefined" ? GEAR_GROUPS : [])
+    .map(g => g.filter(id => currentNodes[id]));
+  // Which existing group each template group corresponds to, so a new group can
+  // be anchored to the next template group that is already in groupOrder.
+  const gidOfTemplateGroup = templateGroups.map(members =>
+    gidBySig[sig(members)] || gidByMember[members.find(m => gidByMember[m])] || null);
   let next = gs.groupOrder.length;
-  (typeof GEAR_GROUPS !== "undefined" ? GEAR_GROUPS : []).forEach(g => {
-    const members = g.filter(id => currentNodes[id]);
+  templateGroups.forEach((members, i) => {
     // Add any group with a present member, including single-member tier boxes,
     // to match how ensureGroupsState seeds a fresh profile. Skipping length < 2
     // here left single-member groups (e.g. a lone tier item) ungrouped when a
     // template was merged in, so they rendered loose at the start of the chart.
     if (!members.length) return;
-    if (existingSigs.has(members.slice().sort().join("|"))) return;
-    if (members.some(m => placed.has(m))) return;
+    if (gidBySig[sig(members)]) return;
+    if (members.some(m => gidByMember[m])) return;
     let gid;
     do { gid = "g" + next++; } while (gs.groups[gid]);
     gs.groups[gid] = members;
-    gs.groupOrder.push(gid);
-    members.forEach(m => placed.add(m));
+    let at = gs.groupOrder.length;
+    for (let j = i + 1; j < templateGroups.length; j++) {
+      const idx = gidOfTemplateGroup[j] ? gs.groupOrder.indexOf(gidOfTemplateGroup[j]) : -1;
+      if (idx >= 0) { at = idx; break; }
+    }
+    gs.groupOrder.splice(at, 0, gid);
+    members.forEach(m => (gidByMember[m] = gid));
+    gidBySig[sig(members)] = gid;
+    gidOfTemplateGroup[i] = gid;
   });
 }
 
