@@ -4,8 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Iron Tracker</title>
-<link rel="stylesheet" href="style.css?v=80" />
-<script src="theme.js?v=80"></script>
+<link rel="stylesheet" href="style.css?v=82" />
+<script src="theme.js?v=82"></script>
 </head>
 <body>
   <header class="topbar">
@@ -22,11 +22,14 @@
         <select id="themeSelect" title="Change the page colors"></select>
         <label for="profileSelect" class="profile-label">Profile</label>
         <select id="profileSelect"></select>
+        <span id="pcSaveStatus" class="pc-save-status" hidden></span>
         <div class="popover-wrap">
           <button id="profileMenuBtn" class="icon-btn" title="Profile actions" aria-haspopup="true" aria-expanded="false">⚙</button>
           <div id="profileMenu" class="popover popover-right" hidden>
             <button id="profileNewBtn" title="Create a new profile">+ New profile</button>
             <button id="profileRenameBtn" title="Rename current profile">Rename</button>
+            <button id="pcSaveBtn" title="Keep this profile saved in a file on your PC">Save to PC...</button>
+            <button id="pcSaveAsBtn" title="Pick a different file on your PC" hidden>Save to PC as...</button>
             <button id="profileExportBtn" title="Download this profile as a file (import it in any other browser)">Export</button>
             <button id="profileImportBtn" title="Import a profile from an exported file">Import</button>
             <button id="manageTemplatesBtn" title="Browse templates, apply one to this profile, or save your own">Templates</button>
@@ -270,19 +273,20 @@
     </div>
   </div>
 
-  <script src="migration.js?v=80"></script>
-  <script src="data.js?v=80"></script>
-  <script src="templates.js?v=80"></script>
-  <script src="state.js?v=80"></script>
-  <script src="graph.js?v=80"></script>
-  <script src="render.js?v=80"></script>
-  <script src="dragdrop.js?v=80"></script>
-  <script src="edges-menu.js?v=80"></script>
-  <script src="modals.js?v=80"></script>
-  <script src="profiles-ui.js?v=80"></script>
-  <script src="templates-ui.js?v=80"></script>
-  <script src="sync.js?v=80"></script>
-  <script src="currency-ui.js?v=80"></script>
-  <script src="app.js?v=80"></script>
+  <script src="migration.js?v=82"></script>
+  <script src="data.js?v=82"></script>
+  <script src="templates.js?v=82"></script>
+  <script src="state.js?v=82"></script>
+  <script src="graph.js?v=82"></script>
+  <script src="render.js?v=82"></script>
+  <script src="dragdrop.js?v=82"></script>
+  <script src="edges-menu.js?v=82"></script>
+  <script src="modals.js?v=82"></script>
+  <script src="profiles-ui.js?v=82"></script>
+  <script src="templates-ui.js?v=82"></script>
+  <script src="sync.js?v=82"></script>
+  <script src="currency-ui.js?v=82"></script>
+  <script src="file-save.js?v=82"></script>
+  <script src="app.js?v=82"></script>
 </body>
 </html>

@@ -178,8 +178,12 @@ function loadState() {
 
 let state = loadState();
 
+// Progress always lands in localStorage first. `onStateSaved` (file-save.js) is
+// an optional hook that flags the active profile as changed since its last write
+// to the linked file on disk.
 function saveState() {
   localStorage.setItem(storageKeyFor(profilesMeta.activeId), JSON.stringify(state));
+  if (typeof onStateSaved === "function") onStateSaved();
 }
 
 function switchProfile(id) {
@@ -222,6 +226,7 @@ function deleteProfile(id) {
   if (Object.keys(profilesMeta.profiles).length <= 1) return;
   localStorage.removeItem(storageKeyFor(id));
   localStorage.removeItem(baseKeyFor(id));
+  if (typeof onProfileDeleted === "function") onProfileDeleted(id);
   delete profilesMeta.profiles[id];
   if (profilesMeta.activeId === id) {
     profilesMeta.activeId = Object.keys(profilesMeta.profiles)[0];
@@ -245,6 +250,9 @@ function refreshProfileSelect() {
     profileSelectEl.appendChild(opt);
   });
   if (profileDeleteBtnEl) profileDeleteBtnEl.disabled = Object.keys(profilesMeta.profiles).length <= 1;
+  // Called after any profile change (switch/create/delete/import/rename) so the
+  // save-to-PC UI can re-bind to the active profile's file. Optional hook.
+  if (typeof onActiveProfileChanged === "function") onActiveProfileChanged();
 }
 
 function showToast(msg) {

@@ -148,11 +148,13 @@ document.addEventListener("keydown", e => {
 // Download a profile (its state + pinned template base) as an importable JSON
 // backup. Shared by the Export button and the template-update warning, so the
 // user can snapshot their progress before an update they might want to roll back.
-function exportProfile(profileId) {
+// The exportable snapshot of a profile. Shared by Export (download) and the
+// save-to-PC file writer.
+function buildProfilePayload(profileId) {
   const p = profilesMeta.profiles[profileId];
-  if (!p) return;
+  if (!p) return null;
   const name = p.name;
-  const payload = {
+  return {
     app: "iron-tracker",
     version: 1,
     name,
@@ -167,10 +169,22 @@ function exportProfile(profileId) {
       ? state
       : JSON.parse(localStorage.getItem(storageKeyFor(profileId)) || "null")
   };
+}
+
+// A filesystem-safe file name for a profile's backup file.
+function profileFileName(profileId) {
+  const p = profilesMeta.profiles[profileId];
+  const name = (p && p.name) || "profile";
+  return "iron-tracker-" + (name.replace(/[^\w-]+/g, "_") || "profile") + ".json";
+}
+
+function exportProfile(profileId) {
+  const payload = buildProfilePayload(profileId);
+  if (!payload) return;
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "iron-tracker-" + (name.replace(/[^\w-]+/g, "_") || "profile") + ".json";
+  a.download = profileFileName(profileId);
   a.click();
   URL.revokeObjectURL(a.href);
 }

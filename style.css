@@ -371,6 +371,16 @@ h1 {
   color: var(--text-dim);
 }
 
+/* Shown while the active profile has changes not yet written to its PC file. */
+.pc-save-status {
+  font-size: 0.72rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
 .icon-btn {
   background: var(--bg-card);
   border: 1px solid var(--border);
