@@ -79,7 +79,7 @@ function refreshTemplateSelect() {
     const opt = document.createElement("option");
     opt.value = t.id;
     opt.textContent = `${t.name} (${(t.goalData || []).length} goals)`;
-    if (t.id === Templates.DEFAULT_TEMPLATE_ID) opt.selected = true;
+    if (t.id === Templates.EMPTY_TEMPLATE_ID) opt.selected = true;
     profileTemplateSelectEl.appendChild(opt);
   });
 }

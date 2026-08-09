@@ -20,6 +20,9 @@
   var TEMPLATES_KEY = "iron-tracker:templates";
   var DEFAULT_TEMPLATE_ID = "ladlor";
   var FULL_TEMPLATE_ID = "__full__";
+  // Pre-selected in the New profile picker (DEFAULT_TEMPLATE_ID stays the
+  // fallback used when a profile references a template that no longer exists).
+  var EMPTY_TEMPLATE_ID = "empty";
 
   function deepClone(v) { return JSON.parse(JSON.stringify(v || [])); }
 
@@ -42,7 +45,7 @@
   // profiles pinned to an older version see the "template updated" banner and can
   // review + apply the changes (see templateUpdateInfo in app.js).
   var BUILTIN_TEMPLATES = [
-    { id: "empty", name: "Empty", builtin: true, version: 1, goalData: [], gearGroups: [] },
+    { id: EMPTY_TEMPLATE_ID, name: "Empty", builtin: true, version: 1, goalData: [], gearGroups: [] },
     {
       id: DEFAULT_TEMPLATE_ID,
       name: "Ironman Ladlord Chart",
@@ -159,6 +162,7 @@
   var api = {
     DEFAULT_TEMPLATE_ID: DEFAULT_TEMPLATE_ID,
     FULL_TEMPLATE_ID: FULL_TEMPLATE_ID,
+    EMPTY_TEMPLATE_ID: EMPTY_TEMPLATE_ID,
     currentTemplateId: DEFAULT_TEMPLATE_ID,
     listTemplates: listTemplates,
     getTemplate: getTemplate,

@@ -234,6 +234,14 @@ function renderUnsafe() {
     btn.textContent = "+ New goal";
     btn.addEventListener("click", () => openAddGoalModal(null));
     empty.appendChild(btn);
+    // An empty profile is also the point where starting from a template makes
+    // most sense, so surface the templates modal right next to it.
+    const tplBtn = document.createElement("button");
+    tplBtn.type = "button";
+    tplBtn.className = "chart-empty-add";
+    tplBtn.textContent = "+ Add template";
+    tplBtn.addEventListener("click", () => openTemplatesModal());
+    empty.appendChild(tplBtn);
     flowEl.appendChild(empty);
   }
 
