@@ -1214,22 +1214,22 @@ test("a goal reachable by two paths is counted once in a subtree total", () => {
   assert.strictEqual(r.total, 1000, "but its cost is counted once, not twice");
 });
 
-test("only item goals keep costs", () => {
+test("every goal type keeps costs", () => {
   const r = inCtx(`
     addCustomChild(null, "Boots", { type: "item", costs: { "coins": { name: "Coins", amount: 500 } } });
     const A = Object.keys(state.customNodes)[0];
     const asItem = !!state.costs[A];
-    // A quest goal offered the same costs must not store them.
+    // A quest goal offered the same costs stores them too.
     addCustomChild(null, "Quest", { type: "quest", costs: { "coins": { name: "Coins", amount: 500 } } });
     const B = Object.keys(state.customNodes).filter(id => id !== A)[0];
     const asQuest = !!state.costs[B];
-    // Switching an item away from "item" drops what it had.
+    // Switching type keeps what the goal had.
     writeGoalCosts(A, { "coins": { name: "Coins", amount: 500 } }, "other");
-    return { asItem, asQuest, afterSwitch: !!state.costs[A], hasCosts: goalTypeHasCosts("item") };
+    return { asItem, asQuest, afterSwitch: !!state.costs[A], hasCosts: goalTypeHasCosts("quest") };
   `);
   assert.strictEqual(r.asItem, true, "an item goal stores its costs");
-  assert.strictEqual(r.asQuest, false, "a non-item goal never stores costs");
-  assert.strictEqual(r.afterSwitch, false, "switching type away from item clears them");
+  assert.strictEqual(r.asQuest, true, "a non-item goal stores costs as well");
+  assert.strictEqual(r.afterSwitch, true, "switching type keeps them");
   assert.strictEqual(r.hasCosts, true);
 });
 

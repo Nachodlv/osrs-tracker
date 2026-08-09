@@ -45,11 +45,9 @@ function currentGoalCosts() {
   return out;
 }
 
-// Only an item is something you buy, so only an item goal carries costs. Other
-// types hide the section entirely; a goal switched away from "item" drops the
-// costs it used to have (see writeGoalCosts) rather than keeping them invisible.
+// Any goal type can cost resources, so the costs section is always available.
 function goalTypeHasCosts(type) {
-  return type === "item";
+  return true;
 }
 
 function syncGoalCostsVisibility(type) {
@@ -59,7 +57,6 @@ function syncGoalCostsVisibility(type) {
 // Persists a draft onto a goal, registering any currency it names. Amounts of 0
 // or less drop the entry, and a goal with no costs left keeps no key at all.
 function writeGoalCosts(id, costs, type) {
-  if (!goalTypeHasCosts(type)) { delete state.costs[id]; return; }
   if (!costs) return;
   const clean = {};
   Object.keys(costs).forEach(cid => {
