@@ -113,8 +113,14 @@ profileNameFormEl.addEventListener("submit", e => {
   e.preventDefault();
   const name = profileNameInputEl.value.trim();
   if (!name) return;
-  if (profileNameMode === "new") createProfile(name, profileTemplateSelectEl.value);
-  else renameProfile(profilesMeta.activeId, name);
+  if (profileNameMode === "new") {
+    createProfile(name, profileTemplateSelectEl.value);
+    closeProfileNameModal();
+    // Still inside the submit gesture, so the file picker is allowed to open.
+    if (typeof promptSaveNewProfileToPc === "function") promptSaveNewProfileToPc();
+    return;
+  }
+  renameProfile(profilesMeta.activeId, name);
   closeProfileNameModal();
 });
 

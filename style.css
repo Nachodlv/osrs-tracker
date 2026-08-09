@@ -372,13 +372,21 @@ h1 {
 }
 
 /* Shown while the active profile has changes not yet written to its PC file. */
-.pc-save-status {
+/* Shown only while the active profile has changes not yet written to its file. */
+.pc-save-now {
   font-size: 0.72rem;
-  padding: 1px 6px;
+  padding: 3px 9px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
+  border: 1px solid var(--accent);
+  background: var(--bg-card);
+  color: var(--accent);
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.pc-save-now:hover {
+  background: var(--accent);
+  color: var(--bg);
 }
 
 .icon-btn {

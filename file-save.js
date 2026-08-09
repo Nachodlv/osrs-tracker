@@ -2,10 +2,12 @@
 // --- Save profile to a file on the PC ------------------------------------------
 // localStorage stays the primary store: every edit is saved there as before. On
 // top of that a profile can be linked to a real file on disk (File System Access
-// API). The first save asks where to put the file; later saves overwrite that
-// same file without a prompt. Between saves the profile is flagged "unsaved" (the
-// flag itself is persisted, so closing the tab and coming back keeps the warning
-// alive), and leaving the page while unsaved triggers the browser's confirm.
+// API). New profiles are linked right away (the picker opens on creation); for
+// older ones the first save asks where to put the file. Later saves overwrite
+// that same file without a prompt. Between saves the profile is flagged
+// "unsaved" (the flag itself is persisted, so closing the tab and coming back
+// keeps the warning alive): the tab title gets a "(*)" marker, a Save button
+// appears in the profile bar, and leaving the page triggers the browser's confirm.
 // The file handle lives in IndexedDB because handles cannot be serialized to
 // localStorage.
 
@@ -15,7 +17,9 @@ const FILE_HANDLE_STORE = "handles";
 
 const pcSaveBtnEl = document.getElementById("pcSaveBtn");
 const pcSaveAsBtnEl = document.getElementById("pcSaveAsBtn");
-const pcSaveStatusEl = document.getElementById("pcSaveStatus");
+const pcSaveNowBtnEl = document.getElementById("pcSaveNowBtn");
+
+const BASE_PAGE_TITLE = document.title;
 
 const supportsFilePicker = typeof window.showSaveFilePicker === "function";
 
@@ -98,13 +102,14 @@ function refreshPcSaveUi() {
       : "Pick a file on your PC to keep this profile saved in";
   }
   if (pcSaveAsBtnEl) pcSaveAsBtnEl.hidden = !linked || !supportsFilePicker;
-  if (pcSaveStatusEl) {
-    pcSaveStatusEl.hidden = !dirty;
-    pcSaveStatusEl.textContent = dirty ? "unsaved on PC" : "";
-    pcSaveStatusEl.title = dirty
-      ? "This profile has changes not yet written to " + (pcFileHandle.name || "its file")
+  if (pcSaveNowBtnEl) {
+    pcSaveNowBtnEl.hidden = !dirty;
+    pcSaveNowBtnEl.title = dirty
+      ? "Unsaved on PC: write this profile to " + (pcFileHandle.name || "its file")
       : "";
   }
+  // The tab title carries the same unsaved marker, so a background tab shows it.
+  document.title = dirty ? "(*) " + BASE_PAGE_TITLE : BASE_PAGE_TITLE;
 }
 
 // --- Writing -----------------------------------------------------------------
@@ -172,6 +177,14 @@ async function saveProfileToPc(forcePick) {
   }
 }
 
+// Saving to a file is the default for new profiles: ask for a location right
+// after creation. Browsers without the picker keep the manual Export flow (a
+// forced download on every new profile would be worse than nothing).
+function promptSaveNewProfileToPc() {
+  if (!supportsFilePicker) return;
+  saveProfileToPc(true);
+}
+
 // --- Hooks from state.js -----------------------------------------------------
 
 // Called after every localStorage save: the linked file is now behind.
@@ -196,7 +209,8 @@ function onActiveProfileChanged() {
   pcFileHandleProfileId = profileId;
   refreshPcSaveUi();
   loadFileHandle(profileId).then(handle => {
-    if (profilesMeta.activeId !== profileId) return;
+    // A file picked in the meantime (new profile) wins over this stale read.
+    if (profilesMeta.activeId !== profileId || pcFileHandle) return;
     pcFileHandle = handle || null;
     refreshPcSaveUi();
   });
@@ -206,6 +220,7 @@ function onActiveProfileChanged() {
 
 if (pcSaveBtnEl) pcSaveBtnEl.addEventListener("click", () => saveProfileToPc(false));
 if (pcSaveAsBtnEl) pcSaveAsBtnEl.addEventListener("click", () => saveProfileToPc(true));
+if (pcSaveNowBtnEl) pcSaveNowBtnEl.addEventListener("click", () => saveProfileToPc(false));
 
 document.addEventListener("keydown", e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
