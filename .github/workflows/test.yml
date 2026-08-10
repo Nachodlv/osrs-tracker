@@ -14,8 +14,8 @@ jobs:
         with:
           node-version: 20
       - name: Run migration tests
-        run: node test-migration.js
+        run: node tests/test-migration.js
       - name: Run app tests
-        run: node test-app.js
+        run: node tests/test-app.js
       - name: Run crawl tests
-        run: node test-crawl.js
+        run: node tests/test-crawl.js

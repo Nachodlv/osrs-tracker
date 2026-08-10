@@ -37,7 +37,7 @@ const { renderAndEval } = require("./render-chrome");
 
 const ROOT = path.join(__dirname, "..");
 const OUT = path.join(ROOT, "templates", "ladlor.json");
-const TEMPLATES_JS = path.join(ROOT, "templates.js");
+const TEMPLATES_JS = path.join(ROOT, "js", "templates.js");
 
 // Read/bump the built-in "ladlor" template version declared in templates.js.
 // The version lives on the DEFAULT_TEMPLATE_ID entry of BUILTIN_TEMPLATES; we
@@ -66,7 +66,7 @@ function bumpLadlorVersion() {
 }
 
 function loadDataJs() {
-  const src = fs.readFileSync(path.join(ROOT, "data.js"), "utf8");
+  const src = fs.readFileSync(path.join(ROOT, "js", "data.js"), "utf8");
   const sandbox = {};
   // data.js only declares globals (var GOAL_DATA, var GEAR_GROUPS); eval in a
   // fresh scope and read them back.
@@ -516,7 +516,7 @@ function escapeReg(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 // with the same id used elsewhere in the file. Returns the number of goals
 // added. Idempotent enough for CI: a rerun with the goals already present is a
 // no-op only if the plan is empty, so callers pass a freshly computed plan.
-function applyNewGoals(plan, dataPath = path.join(ROOT, "data.js")) {
+function applyNewGoals(plan, dataPath = path.join(ROOT, "js", "data.js")) {
   if (!plan.goals.length && !plan.tierAppends.length && !plan.newTiers.length) return 0;
   let src = fs.readFileSync(dataPath, "utf8");
 
@@ -585,7 +585,7 @@ function retypeItems(src, itemNames) {
 async function retypeItemsMode() {
   const { meta } = await fetchRepoData();
   const itemNames = Object.keys(meta).filter(k => meta[k] && meta[k].type === "item");
-  const dataPath = path.join(ROOT, "data.js");
+  const dataPath = path.join(ROOT, "js", "data.js");
   const { src, count } = retypeItems(fs.readFileSync(dataPath, "utf8"), itemNames);
   if (count) fs.writeFileSync(dataPath, src);
   console.log(`Retyped ${count} gear entr${count === 1 ? "y" : "ies"} to type "item" ` +

@@ -5,11 +5,11 @@ dependency-free (checkout + Node, no bundler), matching the app itself.
 
 ## `test.yml` , run the test suites
 
-Runs `node test-migration.js`, `node test-app.js`, and `node test-crawl.js` on
+Runs `node tests/test-migration.js`, `node tests/test-app.js`, and `node tests/test-crawl.js` on
 every push to `master` and on every pull request. Each runner sets
 `process.exitCode = 1` on failure, so a broken suite fails the check. This is the
-CI mirror of the local Stop hook. `test-crawl.js` covers the crawl tool's pure
-logic (group classification and the `data.js` writer); the browser render path
+CI mirror of the local Stop hook. `tests/test-crawl.js` covers the crawl tool's pure
+logic (group classification and the `js/data.js` writer); the browser render path
 is not covered.
 
 ## `crawl-ladlor.yml` , detect Ladlord chart drift
@@ -17,17 +17,17 @@ is not covered.
 Weekly (Mondays 06:00 UTC) and on-demand (`workflow_dispatch`). It runs
 `node tools/crawl-ladlor.js --ci`, which:
 
-1. Regenerates `templates/ladlor.json` from `data.js`.
-2. Crawls ladlorchart.com and diffs the live goal ids against `data.js`.
+1. Regenerates `templates/ladlor.json` from `js/data.js`.
+2. Crawls ladlorchart.com and diffs the live goal ids against `js/data.js`.
 3. Renders the live SPA and diffs its tier-group layout against `GEAR_GROUPS`
    (see "Group drift" below).
-4. Auto-wires purely-additive new goals into `data.js` (see "Auto-wiring" below).
+4. Auto-wires purely-additive new goals into `js/data.js` (see "Auto-wiring" below).
 5. If anything drifted, bumps the built-in Ladlord template `version` in
-   `templates.js` (so pinned profiles get the update banner) and writes a drift
+   `js/templates.js` (so pinned profiles get the update banner) and writes a drift
    report with a section per kind of drift.
 
 When drift is found the workflow commits the version bump + regenerated JSON (and
-any auto-wired `data.js` change) to a `chore/ladlor-crawl-v<N>` branch and tries
+any auto-wired `js/data.js` change) to a `chore/ladlor-crawl-v<N>` branch and tries
 to open a PR. Because this repo disables "Allow GitHub Actions to create and
 approve pull requests", the default token cannot open a PR, so it **falls back to
 opening an issue** labelled `template-drift` (auto-created if missing) with the
@@ -38,7 +38,7 @@ piling up duplicates.
 
 For a **purely additive** change, a new gear item joining an existing tier, or a
 whole new tier of all-new items while nothing disappeared, the crawl writes the
-flat goal into `data.js` (id `gear.<slug>`, with title/icon/link/type read from
+flat goal into `js/data.js` (id `gear.<slug>`, with title/icon/link/type read from
 the rendered node) and slots it into `GEAR_GROUPS`, then regenerates the
 template. The PR therefore arrives with the easy cases already wired in.
 
@@ -85,7 +85,7 @@ node (stale dictionary leftovers), instead of reporting them as drift.
 Comment `@claude ...` on an issue or PR and Claude Code adds the change on a
 branch, runs the tests, and opens a draft PR. The typical use is a
 `template-drift` issue: comment `@claude wire these new goals into data.js` and
-it adds them with the right icons/links (using the `data.js` resolution helpers)
+it adds them with the right icons/links (using the `js/data.js` resolution helpers)
 and regenerates the template.
 
 Notes:

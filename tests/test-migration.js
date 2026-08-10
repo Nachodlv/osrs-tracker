@@ -4,7 +4,7 @@
 // (including TuuxSolo-shaped ones) still load correctly.
 
 const assert = require("assert");
-const { ID_MIGRATIONS, remapId, migrateStateData } = require("./migration.js");
+const { ID_MIGRATIONS, remapId, migrateStateData } = require("../js/migration.js");
 
 let passed = 0;
 function test(name, fn) {

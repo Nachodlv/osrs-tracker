@@ -66,7 +66,7 @@ function makeContext() {
   for (const f of ["theme.js", "migration.js", "data.js", "templates.js", "state.js", "graph.js",
     "render.js", "dragdrop.js", "edges-menu.js", "modals.js", "profiles-ui.js",
     "templates-ui.js", "sync.js", "currency-ui.js", "app.js"]) {
-    vm.runInContext(fs.readFileSync(path.join(__dirname, f), "utf8"), ctx, { filename: f });
+    vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "js", f), "utf8"), ctx, { filename: f });
   }
   return ctx;
 }

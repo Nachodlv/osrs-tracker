@@ -23,6 +23,7 @@ const INDEX = path.join(ROOT, "index.html");
 // changed asset basename -> test suites to run
 const TEST_TRIGGERS = {
   "app.js": ["test-app.js"],
+  "theme.js": ["test-app.js"],
   "state.js": ["test-app.js"],
   "graph.js": ["test-app.js"],
   "render.js": ["test-app.js"],
@@ -32,26 +33,29 @@ const TEST_TRIGGERS = {
   "profiles-ui.js": ["test-app.js"],
   "templates-ui.js": ["test-app.js"],
   "sync.js": ["test-app.js"],
+  "currency-ui.js": ["test-app.js"],
+  "file-save.js": ["test-app.js"],
   "templates.js": ["test-app.js"],
   "data.js": ["test-app.js", "test-migration.js", "test-crawl.js"],
   "migration.js": ["test-app.js", "test-migration.js"],
 };
 
+// index.html references are repo-relative (js/state.js, css/style.css).
 function referencedAssets() {
   const html = fs.readFileSync(INDEX, "utf8");
   const re = /(?:href|src)="([^"?]+)\?v=\d+"/g;
-  const names = new Set();
+  const refs = new Set();
   let m;
-  while ((m = re.exec(html)) !== null) names.add(path.basename(m[1]));
-  return names;
+  while ((m = re.exec(html)) !== null) refs.add(m[1]);
+  return refs;
 }
 
 function main() {
   const indexMtime = fs.statSync(INDEX).mtimeMs;
   const changed = [];
-  for (const name of referencedAssets()) {
+  for (const ref of referencedAssets()) {
     try {
-      if (fs.statSync(path.join(ROOT, name)).mtimeMs > indexMtime) changed.push(name);
+      if (fs.statSync(path.join(ROOT, ref)).mtimeMs > indexMtime) changed.push(path.basename(ref));
     } catch {}
   }
   if (changed.length === 0) return; // no asset edited this turn
@@ -69,7 +73,7 @@ function main() {
   let failed = false;
   for (const suite of suites) {
     try {
-      execFileSync(process.execPath, [suite], { cwd: ROOT, encoding: "utf8" });
+      execFileSync(process.execPath, [path.join("tests", suite)], { cwd: ROOT, encoding: "utf8" });
       process.stderr.write(`stop-hook: ${suite} passed\n`);
     } catch (e) {
       failed = true;

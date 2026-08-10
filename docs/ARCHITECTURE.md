@@ -19,7 +19,7 @@ when you hit an environment/tooling error below.
 - **Background-job worktree guard**: background sessions must call `EnterWorktree` before the first file edit, or Edit/Write to the shared checkout is rejected. Preferred flow is to isolate in a worktree and ship via a draft PR. Only edit `master` directly when the user explicitly asks for the work to stay on `master`; in that case confirm before committing, since you are touching their working checkout.
 - **Commit messages in the Bash tool**: use `git commit -F -` with a heredoc. Do NOT use PowerShell here-string syntax (`@'...'@`) in the Bash tool; it is PowerShell-only and leaves a literal `@` as the commit subject.
 - **Single-commit patch from a worktree**: use `git diff HEAD~1 HEAD`. The worktree base can differ from the main checkout's `master`, so `git diff master HEAD` pulls unrelated files into the patch.
-- **preview_* browser tools are not always present** (e.g. background jobs). Do not assume browser preview is available; reproduce graph/state/layout bugs in `test-app.js` and say when a visual check was not possible.
-- `npm install` may be blocked (403 from registry); do not plan on jsdom etc., use the vm + DOM-stub harness in `test-app.js`.
+- **preview_* browser tools are not always present** (e.g. background jobs). Do not assume browser preview is available; reproduce graph/state/layout bugs in `tests/test-app.js` and say when a visual check was not possible.
+- `npm install` may be blocked (403 from registry); do not plan on jsdom etc., use the vm + DOM-stub harness in `tests/test-app.js`.
 - Deleting files in the mounted folder from the shell requires requesting delete permission first (`rm` fails with "Operation not permitted" otherwise).
 - Remove `__pycache__` if `server.py` gets compiled during checks.

@@ -5,7 +5,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { classifyGroups, applyNewGoals, canonId, splitStaleIds,
-  slugify, repoGroupsShape, repoTitleMap, goalFromMember, retypeItems } = require("./tools/crawl-ladlor");
+  slugify, repoGroupsShape, repoTitleMap, goalFromMember, retypeItems } = require("../tools/crawl-ladlor");
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -156,7 +156,7 @@ const idMapOf = (...ids) => new Map(ids.map(id => [canonId(id), id]));
 // 6. applyNewGoals writes valid data.js: append to a tier + add a new tier.
 {
   const tmp = path.join(os.tmpdir(), "data-crawltest-" + Date.now() + ".js");
-  fs.copyFileSync(path.join(__dirname, "data.js"), tmp);
+  fs.copyFileSync(path.join(__dirname, "..", "js", "data.js"), tmp);
   const plan = {
     goals: [
       { id: "gear.test-widget", title: "Test widget", type: "other", icon: "Test_widget.png", link: "https://oldschool.runescape.wiki/w/Test_widget" },
