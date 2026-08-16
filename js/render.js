@@ -18,6 +18,11 @@ let costMemo = {};
 // with wrapped footers make their row taller, so rows are no longer on a fixed
 // ROW_H pitch. Drag & drop reads these through rowTopIn().
 let lastRowTops = {}, lastNodeHeights = {};
+// Goals ticked while their block is open. A finished branch is dropped from its
+// parent's block, so without this a goal would vanish the moment it was ticked
+// and a misclick could not be undone. These stay put until the block is opened
+// again (expandSubtree clears the set), which is when it is meant to shrink.
+let justCompleted = new Set();
 
 function getGraph() {
   const { tree } = getEffectiveTree();
@@ -54,12 +59,9 @@ function renderUnsafe() {
   state.groupsState.groupOrder.forEach(gid =>
     (state.groupsState.groups[gid] || []).forEach(id => groupedIdSet.add(id)));
 
-  const visibility = computeVisibility(nodes, groupedIdSet);
-  const visibleIds = Object.keys(nodes).filter(id => visibility[id]);
-  lastVisibleIds = visibleIds;
-
   const progressMemo = {};
   const statusMemo = {};
+  const subtreeDoneMemo = {};
   const mergedColumns = {};
   const mergedRows = {};
   const nodeBlock = {};
@@ -75,29 +77,55 @@ function renderUnsafe() {
     if (hideIncomplete && !isDone) return false;
     return true;
   };
-  let rootIds = visibleIds.filter(id => nodes[id].parentIds.length === 0 && passesHideFilter(id));
-  const rootIdSet = new Set(rootIds);
+  // A goal is on the chart in its own right when nothing above it (top-level)
+  // or when it holds a tier-group slot. Neither depends on what is expanded, so
+  // this no longer needs a global visibility pass: whether a node renders as a
+  // card is decided per block, by the walk in renderRoot.
+  let rootIds = Object.keys(nodes).filter(id =>
+    isChartRoot(id, nodes, groupedIdSet) && passesHideFilter(id));
+
+  // Which sub-goals a block shows under `id`: the ones with work left, so a
+  // finished branch drops out and a long chain shrinks as it gets completed.
+  // A finished branch that is explicitly expanded stays put, which is what
+  // makes a hidden one reachable again: the parent card carries a "✓N" chip
+  // that expands them (revealDoneChildren), so ticking a goal by mistake is
+  // never a dead end. When no sub-goal has work left the finished ones show
+  // anyway, so clicking a goal open always reveals something. "Hide incomplete"
+  // is the view where finished work is the point, so it keeps everything.
+  const splitChildren = (blockRoot, id) => {
+    const kids = nodes[id].childIds;
+    if (hideIncomplete) return { shown: kids, doneKids: [], hiddenDone: [] };
+    const done = new Set(kids.filter(cid => isSubtreeDone(cid, nodes, subtreeDoneMemo)));
+    if (!done.size || done.size === kids.length) return { shown: kids, doneKids: [], hiddenDone: [] };
+    const kept = cid => isExpandedIn(blockRoot, cid) || justCompleted.has(cid);
+    return {
+      shown: kids.filter(cid => !done.has(cid) || kept(cid)),
+      doneKids: kids.filter(cid => done.has(cid)),
+      hiddenDone: kids.filter(cid => done.has(cid) && !kept(cid)),
+    };
+  };
+  const shownChildren = (blockRoot, id) => splitChildren(blockRoot, id).shown;
 
   function renderRoot(rootId, container) {
     const rootNode = nodes[rootId];
-    const isExpanded = rootNode.childIds.length > 0 && isExpandedState(rootId);
+    const isExpanded = isExpandedState(rootId) && shownChildren(rootId, rootId).length > 0;
 
     if (!isExpanded) {
-      const el = renderGraphNode(rootNode, progressMemo, statusMemo, { compact: true });
+      const el = renderGraphNode(rootNode, progressMemo, statusMemo, { compact: true, blockRoot: rootId });
       el.classList.add("grid-mode");
       container.appendChild(el);
       return;
     }
 
-    // This root's own local subtree, scoped so collapsing a branch re-packs
-    // only this block.
+    // This root's own local subtree. A node's sub-goals are only walked into
+    // when that node is expanded IN THIS BLOCK, so the same goal can be open
+    // here and shut in its own block (or under a different goal) at once.
     const sub = {};
     (function visit(id) {
       if (sub[id]) return;
-      sub[id] = Object.assign({}, nodes[id], {
-        childIds: nodes[id].childIds.filter(cid => visibility[cid])
-      });
-      nodes[id].childIds.forEach(cid => { if (visibility[cid]) visit(cid); });
+      const kids = isExpandedIn(rootId, id) ? shownChildren(rootId, id) : [];
+      sub[id] = Object.assign({}, nodes[id], { childIds: kids });
+      kids.forEach(visit);
     })(rootId);
     const subIds = Object.keys(sub);
 
@@ -140,7 +168,14 @@ function renderUnsafe() {
     subIds.forEach(id => {
       const node = nodes[id];
       const { cx, cy } = center(id);
-      const el = renderGraphNode(node, progressMemo, statusMemo);
+      // A finished-sub-goal chip only makes sense once this card is open, and
+      // "open" is per block, so both the chip and the click handler carry the
+      // block this card belongs to.
+      const split = isExpandedIn(rootId, id)
+        ? splitChildren(rootId, id)
+        : { doneKids: [], hiddenDone: [] };
+      const el = renderGraphNode(node, progressMemo, statusMemo,
+        { doneKids: split.doneKids, hiddenDone: split.hiddenDone, blockRoot: rootId });
       el.style.left = cx + "px";
       el.style.top = (cy - NODE_H / 2) + "px";
       blockEl.appendChild(el);
@@ -173,10 +208,10 @@ function renderUnsafe() {
   // drag's bubbling events.
   ungroupedRoots.forEach(rootId => renderRoot(rootId, flowEl));
 
-  // A grouped goal keeps its group slot whenever it is visible and passes the
-  // hide filter, even if it now also has a parent (so it renders here and under
-  // that parent both).
-  const groupMemberShown = id => !!nodes[id] && visibility[id] && passesHideFilter(id);
+  // A grouped goal keeps its group slot whenever it passes the hide filter,
+  // even if it now also has a parent (so it renders here and under that parent
+  // both) — the slot is what makes it a goal in its own right.
+  const groupMemberShown = id => !!nodes[id] && passesHideFilter(id);
   const visibleGroupIds = state.groupsState.groupOrder.filter(gid =>
     (state.groupsState.groups[gid] || []).some(groupMemberShown));
 
@@ -252,6 +287,9 @@ function renderUnsafe() {
   lastColumns = mergedColumns;
   lastRows = mergedRows;
   lastNodeBlock = nodeBlock;
+  // Everything actually on the chart: block members plus the compact roots that
+  // are not in one. Drag & drop reads this to find a node's column siblings.
+  lastVisibleIds = [...new Set(Object.keys(nodeBlock).concat(rootIds))];
 
   applyFilter();
   updateOverallProgress(nodes);
@@ -390,32 +428,77 @@ function updateOverallProgress(nodes) {
   document.getElementById("overallLabel").textContent = `${completed} / ${total} (${pct}%)`;
 }
 
-// Expanding opens the whole subtree; collapsing only affects that one node.
-function expandSubtree(id, nodes, seen) {
+// Expanding opens the subtree down to where the work still is: a sub-goal
+// whose own sub-goals are all finished is collapsed instead, so big goals stay
+// small as they get completed. The clicked goal always opens, so its finished
+// sub-goals are one click away. Collapsing only affects that one node.
+function expandSubtree(blockRoot, id, nodes, seen, doneMemo) {
+  if (!seen) justCompleted.clear(); // opening the block is when it shrinks
   seen = seen || new Set();
+  doneMemo = doneMemo || {};
   if (seen.has(id)) return;
   seen.add(id);
-  state.collapsed[id] = false;
-  (nodes[id] && nodes[id].childIds || []).forEach(cid => expandSubtree(cid, nodes, seen));
+  setExpandedIn(blockRoot, id, true);
+  (nodes[id] && nodes[id].childIds || []).forEach(cid => {
+    if (seen.has(cid)) return;
+    if (hasUnfinishedChild(cid, nodes, doneMemo)) {
+      expandSubtree(blockRoot, cid, nodes, seen, doneMemo);
+    } else {
+      seen.add(cid);
+      setExpandedIn(blockRoot, cid, false);
+    }
+  });
 }
 
-function toggleCollapse(id) {
-  if (isExpandedState(id)) {
-    state.collapsed[id] = true;
+// A goal's dependency tree grows to the LEFT of it, so an expanded block can be
+// several screens wide with the goal itself out past the right edge of the
+// window (#chart scrolls horizontally). Nothing moves the viewport on its own,
+// so opening a big goal used to look like the goal had disappeared. Bring it
+// back into view: "nearest" scrolls the minimum, which leaves the goal at the
+// edge with as much of its tree as fits alongside it.
+function scrollGoalIntoView(id) {
+  // Only quotes and backslashes need escaping inside a quoted attribute value;
+  // goal ids are slugs, but custom titles have produced odd ones before.
+  const el = chartEl.querySelector(`[data-id="${id.replace(/["\\]/g, "\\$&")}"]`);
+  if (el && typeof el.scrollIntoView === "function") {
+    el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  }
+}
+
+// `blockRoot` is the block the clicked card belongs to; omitted (or equal to
+// `id`) means the goal's own block. Toggling one card never moves the other.
+function toggleCollapse(id, blockRoot) {
+  const expanding = !isExpandedIn(blockRoot, id);
+  if (expanding) {
+    expandSubtree(blockRoot, id, currentNodes);
   } else {
-    expandSubtree(id, currentNodes);
+    setExpandedIn(blockRoot, id, false);
   }
   saveState();
   render();
+  if (expanding) scrollGoalIntoView(id);
 }
 
 function markDone(id, value) {
   if (value) {
     state.done[id] = true;
+    justCompleted.add(id);
   } else {
     delete state.done[id];
+    justCompleted.delete(id);
     cascadeUncheckAncestors(id, currentNodes);
   }
+  saveState();
+  render();
+}
+
+// Show (or re-hide) the finished sub-goals a goal's card is holding back in
+// this block. Expanding them is what keeps them, see splitChildren.
+function revealDoneChildren(blockRoot, id, reveal) {
+  const doneMemo = {};
+  ((currentNodes[id] || {}).childIds || []).forEach(cid => {
+    if (isSubtreeDone(cid, currentNodes, doneMemo)) setExpandedIn(blockRoot, cid, reveal);
+  });
   saveState();
   render();
 }
@@ -435,9 +518,10 @@ function renderGraphNode(node, progressMemo, statusMemo, opts) {
 
   // Left click toggles collapse/expand for a goal with sub-goals; for a leaf it
   // toggles done/not-done directly. Interactive controls stopPropagation.
+  const blockRoot = opts && opts.blockRoot;
   div.addEventListener("click", () => {
     if (hasChildren) {
-      toggleCollapse(node.id);
+      toggleCollapse(node.id, blockRoot);
     } else if (canToggleDone && !isAutoTrackedSkill(node)) {
       markDone(node.id, status !== "done");
     }
@@ -589,6 +673,26 @@ function renderGraphNode(node, progressMemo, statusMemo, opts) {
     prog.className = "graph-node-progress";
     prog.textContent = `${progress.completed}/${progress.total}`;
     footer.appendChild(prog);
+  }
+
+  // Finished sub-goals are dropped from this goal's block; this is the way back
+  // to them (to untick one, or just to look).
+  const doneKids = (opts && opts.doneKids) || [];
+  const hiddenDone = (opts && opts.hiddenDone) || [];
+  if (doneKids.length) {
+    const showing = hiddenDone.length === 0;
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "done-kids-badge" + (showing ? " showing" : "");
+    chip.textContent = `✓${doneKids.length}`;
+    chip.title = showing
+      ? `Showing ${doneKids.length} finished sub-goal(s) — click to hide again`
+      : `${hiddenDone.length} finished sub-goal(s) hidden — click to show`;
+    chip.addEventListener("click", e => {
+      e.stopPropagation();
+      revealDoneChildren(blockRoot, node.id, !showing);
+    });
+    footer.appendChild(chip);
   }
 
   costPartsOf(node.id).forEach(part => {

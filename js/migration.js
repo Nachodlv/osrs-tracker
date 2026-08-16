@@ -166,6 +166,13 @@ function migrateStateData(parsed) {
   if (parsed.inProgress) parsed.inProgress = remapKeyedObject(parsed.inProgress);
   if (parsed.order) parsed.order = remapKeyedObject(parsed.order);
   if (parsed.collapsed) parsed.collapsed = remapKeyedObject(parsed.collapsed);
+  // Both levels are node ids: the block a card lives in, and the card itself.
+  if (parsed.blockCollapsed) {
+    parsed.blockCollapsed = remapKeyedObject(parsed.blockCollapsed);
+    Object.keys(parsed.blockCollapsed).forEach(blockRoot => {
+      parsed.blockCollapsed[blockRoot] = remapKeyedObject(parsed.blockCollapsed[blockRoot]);
+    });
+  }
   if (parsed.removed) parsed.removed = remapKeyedObject(parsed.removed);
   if (parsed.rootGoals) parsed.rootGoals = remapKeyedObject(parsed.rootGoals);
   if (parsed.overrides) parsed.overrides = remapKeyedObject(parsed.overrides);

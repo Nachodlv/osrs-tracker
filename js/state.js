@@ -126,6 +126,12 @@ function defaultState() {
   return {
     done: {}, order: {}, customNodes: {}, linkedEdges: {}, removedEdges: {},
     collapsed: {}, overrides: {}, removed: {}, username: "",
+    // Expansion of a goal's card INSIDE another goal's block:
+    // { blockRootId: { nodeId: true|false } }, same convention as `collapsed`
+    // (false = explicitly expanded). A goal linked as a prerequisite renders in
+    // two places at once, and this is what lets it be open in one and shut in
+    // the other. Both key levels are node ids, so migrateStateData remaps them.
+    blockCollapsed: {},
     // Which source the "Sync stats" button pulls skill levels from:
     // "hiscores" (official, no plugin needed) or "runeprofile" (RuneProfile plugin).
     skillSource: "hiscores",
@@ -160,6 +166,7 @@ function loadState() {
       linkedEdges: parsed.linkedEdges || {},
       removedEdges: parsed.removedEdges || {},
       collapsed: parsed.collapsed || {},
+      blockCollapsed: parsed.blockCollapsed || {},
       overrides: parsed.overrides || {},
       removed: parsed.removed || {},
       username: parsed.username || "",

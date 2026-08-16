@@ -81,6 +81,7 @@ function inCtx(body) {
     state.customNodes = {}; state.linkedEdges = {}; state.removedEdges = {};
     state.rootGoals = {}; state.order = {}; state.collapsed = {};
     state.done = {}; state.overrides = {}; state.removed = {}; state.groupsState = null;
+    state.blockCollapsed = {};
     state.currencies = {}; state.costs = {}; state.bank = {};
     const R = (function(){ ${body} })();
     return JSON.parse(JSON.stringify(R));
@@ -117,8 +118,8 @@ test("a grouped goal keeps its group membership after being linked as a child", 
 });
 
 test("a grouped goal stays visible even when its new parent is collapsed", () => {
-  // This is the bug: without treating group members as root-like, a grouped
-  // goal linked under a collapsed parent becomes invisible (disappears).
+  // This is the bug: without treating group members as goals in their own
+  // right, a grouped goal linked under a collapsed parent disappears.
   const r = inCtx(`
     addCustomChild(null, "Q", { type: "quest" });
     const Q = Object.keys(state.customNodes)[0];
@@ -130,13 +131,16 @@ test("a grouped goal stays visible even when its new parent is collapsed", () =>
     const grouped = new Set();
     state.groupsState.groupOrder.forEach(gid =>
       (state.groupsState.groups[gid] || []).forEach(id => grouped.add(id)));
+    render();
     return {
-      withoutRootLike: computeVisibility(nodes)[P] === true,
-      withRootLike: computeVisibility(nodes, grouped)[P] === true,
+      reachableOnly: isChartRoot(P, nodes) === true,
+      asGroupMember: isChartRoot(P, nodes, grouped) === true,
+      rendered: lastVisibleIds.indexOf(P) !== -1,
     };
   `);
-  assert.strictEqual(r.withoutRootLike, false, "reachability-only would hide it (the bug)");
-  assert.strictEqual(r.withRootLike, true, "as a group member it stays visible (the fix)");
+  assert.strictEqual(r.reachableOnly, false, "it does have a parent now");
+  assert.strictEqual(r.asGroupMember, true, "but its tier slot keeps it a goal in its own right");
+  assert.strictEqual(r.rendered, true, "so it still renders");
 });
 
 test("merging a template keeps single-member tier groups (not ungrouped at the start)", () => {
@@ -151,9 +155,8 @@ test("merging a template keeps single-member tier groups (not ungrouped at the s
     const grouped = new Set();
     state.groupsState.groupOrder.forEach(gid =>
       (state.groupsState.groups[gid] || []).forEach(id => grouped.add(id)));
-    const vis = computeVisibility(currentNodes, grouped);
     const ungrouped = Object.keys(currentNodes)
-      .filter(id => vis[id] && currentNodes[id].parentIds.length === 0 && !grouped.has(id));
+      .filter(id => isChartRoot(id, currentNodes, grouped) && !grouped.has(id));
     const singleMemberGrouped = grouped.has("gear.voidwaker"); // a lone-member tier box
     Templates.applyTemplate("__full__"); // restore global data for later tests
     return { ungroupedCount: ungrouped.length, singleMemberGrouped };
@@ -184,14 +187,15 @@ test("a template group added mid-chart lands at its template position, not at th
 
 console.log("\nGraph invariants");
 
-test("computeVisibility hides a normal child whose only parent is collapsed", () => {
+test("a normal child whose only parent is collapsed does not render", () => {
   const r = inCtx(`
     addCustomChild(null, "P", { type: "quest" });
     const P = Object.keys(state.customNodes)[0];
     addCustomChild(P, "C", { type: "quest" });
     const C = Object.keys(state.customNodes).find(id => state.customNodes[id].title === "C");
     state.collapsed[P] = true;
-    return { visible: computeVisibility(getGraph().nodes)[C] === true };
+    render();
+    return { visible: lastVisibleIds.indexOf(C) !== -1 };
   `);
   assert.strictEqual(r.visible, false);
 });
@@ -1243,6 +1247,332 @@ test("costs never gate completion (the status model stays two-state)", () => {
   `);
   assert.strictEqual(r.unlocked, true, "an unaffordable goal is still tickable");
   assert.strictEqual(r.status, "todo", "and costs do not change its status");
+});
+
+console.log("\nExpanding a subtree");
+
+// Custom ids are minted with a timestamp, so these tests look goals up by title.
+const BY_TITLE = `const byTitle = t =>
+  Object.keys(state.customNodes).find(id => state.customNodes[id].title === t);`;
+
+test("expanding skips finished branches and keeps them collapsed", () => {
+  const r = inCtx(`${BY_TITLE}
+    addCustomChild(null, "Root", { type: "quest" });
+    const R = byTitle("Root");
+    addCustomChild(R, "Finished", { type: "quest" });
+    const F = byTitle("Finished");
+    addCustomChild(F, "FinishedKid", { type: "quest" });
+    addCustomChild(R, "Open", { type: "quest" });
+    const O = byTitle("Open");
+    addCustomChild(O, "OpenKid", { type: "quest" });
+    state.done[F] = true; state.done[byTitle("FinishedKid")] = true;
+    expandSubtree(R, R, getGraph().nodes);
+    return { root: !isExpandedIn(R, R), finished: !isExpandedIn(R, F), open: !isExpandedIn(R, O) };
+  `);
+  assert.strictEqual(r.root, false, "the clicked goal opens");
+  assert.strictEqual(r.finished, true, "a branch with no work left stays collapsed");
+  assert.strictEqual(r.open, false, "a branch with work left opens");
+});
+
+test("opening a goal's card in one block leaves its own block shut", () => {
+  // The bug: a grouped goal linked as a prerequisite renders in two places, and
+  // state.collapsed was one shared switch, so opening the prerequisite card
+  // also opened that goal's own block and drew the same tree twice.
+  const r = inCtx(`
+    addCustomChild(null, "Goal", { type: "quest" });
+    const G = Object.keys(state.customNodes)[0];
+    const P = "gear.dragon-scimitar"; // a tier group member: a goal in its own right
+    ensureGroupsState();
+    addLinkedChild(G, P);
+    addCustomChild(P, "Under the grouped goal", { type: "quest" });
+    const sub = Object.keys(state.customNodes).find(id => state.customNodes[id].title === "Under the grouped goal");
+    // Start from everything shut (linking a goal opens its new parent), then
+    // work only inside G's block.
+    state.collapsed[G] = true; state.collapsed[P] = true; state.blockCollapsed = {};
+    toggleCollapse(G, G);    // opening G cascades P's card in it open
+    const cascade = { openInG: isExpandedIn(G, P), openInOwn: isExpandedIn(null, P) };
+    toggleCollapse(P, G);    // click that card shut
+    toggleCollapse(P, G);    // and open it again
+    return {
+      cascade, openInG: isExpandedIn(G, P), openInOwn: isExpandedIn(null, P),
+      subInG: lastNodeBlock[sub] === G, subInOwnBlock: lastNodeBlock[sub] === P,
+    };
+  `);
+  assert.strictEqual(r.cascade.openInG, true, "opening G opens the card inside it");
+  assert.strictEqual(r.cascade.openInOwn, false, "without touching the goal's own block");
+  assert.strictEqual(r.openInG, true, "clicking the card toggles it here");
+  assert.strictEqual(r.openInOwn, false, "and still never touches its own block");
+  assert.strictEqual(r.subInG, true, "its sub-goal renders inside the block clicked in");
+  assert.strictEqual(r.subInOwnBlock, false, "and not in its own block");
+});
+
+test("the same goal can be open in its own block and shut as a prerequisite", () => {
+  const r = inCtx(`
+    addCustomChild(null, "Goal", { type: "quest" });
+    const G = Object.keys(state.customNodes)[0];
+    const P = "gear.dragon-scimitar";
+    ensureGroupsState();
+    addLinkedChild(G, P);
+    addCustomChild(P, "Sub", { type: "quest" });
+    const sub = Object.keys(state.customNodes).find(id => state.customNodes[id].title === "Sub");
+    state.collapsed[G] = true; state.collapsed[P] = true; state.blockCollapsed = {};
+    toggleCollapse(G, G);      // opens G's block, and P's card inside it
+    toggleCollapse(P, G);      // click that card shut again
+    toggleCollapse(P, null);   // and open P's own block instead
+    return { ownBlock: lastNodeBlock[sub] === P, inGBlock: lastNodeBlock[sub] === G,
+      openInOwn: isExpandedIn(null, P), openInG: isExpandedIn(G, P) };
+  `);
+  assert.strictEqual(r.openInOwn, true, "its own block is open");
+  assert.strictEqual(r.ownBlock, true, "so its sub-goal renders there");
+  assert.strictEqual(r.openInG, false, "the prerequisite card stays shut");
+  assert.strictEqual(r.inGBlock, false, "so the tree is not duplicated");
+});
+
+test("a finished sub-goal is dropped from its parent's block", () => {
+  const r = inCtx(`${BY_TITLE}
+    addCustomChild(null, "Root", { type: "quest" });
+    const R = byTitle("Root");
+    addCustomChild(R, "Finished", { type: "quest" });
+    const F = byTitle("Finished");
+    addCustomChild(R, "Todo", { type: "quest" });
+    const T = byTitle("Todo");
+    state.done[F] = true;
+    expandSubtree(R, R, getGraph().nodes);
+    render();
+    return { root: lastNodeBlock[R] === R, todo: lastNodeBlock[T] === R, finished: lastNodeBlock[F] };
+  `);
+  assert.strictEqual(r.root, true, "the root renders its own block");
+  assert.strictEqual(r.todo, true, "with the sub-goal that still has work");
+  assert.strictEqual(r.finished, undefined, "and without the finished one");
+});
+
+test("'Hide incomplete' brings finished sub-goals back", () => {
+  // That view is the one where finished work is the point, so it keeps
+  // everything. The root here reads as complete (every leaf is done) while one
+  // branch is genuinely finished and the other is only unticked at the top.
+  const r = inCtx(`${BY_TITLE}
+    addCustomChild(null, "Root", { type: "quest" });
+    const R = byTitle("Root");
+    addCustomChild(R, "Finished", { type: "quest" });
+    const F = byTitle("Finished");
+    addCustomChild(F, "FinishedKid", { type: "quest" });
+    addCustomChild(R, "Unticked", { type: "quest" });
+    const U = byTitle("Unticked");
+    addCustomChild(U, "UntickedKid", { type: "quest" });
+    state.done[F] = true;
+    state.done[byTitle("FinishedKid")] = true;
+    state.done[byTitle("UntickedKid")] = true; // U itself is never ticked
+    expandSubtree(R, R, getGraph().nodes);
+    render();
+    const normal = lastNodeBlock[F];
+    hideIncomplete = true;
+    render();
+    const kept = lastNodeBlock[F] === R;
+    hideIncomplete = false;
+    return { normal, kept };
+  `);
+  assert.strictEqual(r.normal, undefined, "normally the finished branch is dropped");
+  assert.strictEqual(r.kept, true, "'Hide incomplete' keeps it");
+});
+
+test("a ticked goal with unfinished sub-goals still expands", () => {
+  // Ticked before one of its sub-goals was added: state.done says finished, but
+  // there is still work under it, so it is not a finished branch.
+  const r = inCtx(`${BY_TITLE}
+    addCustomChild(null, "Root", { type: "quest" });
+    const R = byTitle("Root");
+    addCustomChild(R, "Ticked", { type: "quest" });
+    const T = byTitle("Ticked");
+    addCustomChild(T, "Leftover", { type: "quest" });
+    const L = byTitle("Leftover");
+    state.done[T] = true; // but Leftover is not
+    expandSubtree(R, R, getGraph().nodes);
+    render();
+    return { open: !isExpandedIn(R, T), shown: lastNodeBlock[T] === R, leftover: lastNodeBlock[L] === R };
+  `);
+  assert.strictEqual(r.open, false, "it still opens");
+  assert.strictEqual(r.shown, true, "and stays in the block");
+  assert.strictEqual(r.leftover, true, "along with the work left under it");
+});
+
+test("a goal whose sub-goals are all finished stays collapsed but still opens", () => {
+  const r = inCtx(`${BY_TITLE}
+    addCustomChild(null, "Parent", { type: "quest" });
+    const P = byTitle("Parent");
+    addCustomChild(P, "Mid", { type: "quest" });
+    const M = byTitle("Mid");
+    addCustomChild(M, "Finished", { type: "quest" });
+    const D = byTitle("Finished");
+    state.done[D] = true;
+    expandSubtree(P, P, getGraph().nodes);
+    render();
+    const afterCascade = { mid: lastNodeBlock[M] === P, done: lastNodeBlock[D],
+      midOpen: isExpandedIn(P, M) };
+    toggleCollapse(M, P); // clicking it
+    return { afterCascade, midOpen: isExpandedIn(P, M), doneShown: lastNodeBlock[D] === P };
+  `);
+  assert.strictEqual(r.afterCascade.mid, true, "the goal itself renders");
+  assert.strictEqual(r.afterCascade.done, undefined, "its finished sub-goal is hidden");
+  assert.strictEqual(r.afterCascade.midOpen, false, "and it is left collapsed");
+  assert.strictEqual(r.midOpen, true, "clicking it opens it");
+  assert.strictEqual(r.doneShown, true, "revealing the finished sub-goal");
+});
+
+test("ticking a sub-goal does not make it vanish under the cursor", () => {
+  // The bug: ticking a goal dropped it from the block on the spot, so a misclick
+  // could not be undone (the goal was simply gone).
+  const r = inCtx(`${BY_TITLE}
+    addCustomChild(null, "Root", { type: "quest" });
+    const R = byTitle("Root");
+    addCustomChild(R, "Tick me", { type: "quest" });
+    const T = byTitle("Tick me");
+    addCustomChild(R, "Todo", { type: "quest" });
+    expandSubtree(R, R, getGraph().nodes);
+    render();
+    markDone(T, true);
+    const afterTick = lastNodeBlock[T] === R;
+    markDone(T, false); // and it can be unticked again
+    return { afterTick, done: !!state.done[T], stillShown: lastNodeBlock[T] === R };
+  `);
+  assert.strictEqual(r.afterTick, true, "the goal just ticked stays in the block");
+  assert.strictEqual(r.done, false, "so it can be unticked");
+  assert.strictEqual(r.stillShown, true, "and it is still there afterwards");
+});
+
+test("ticking a goal whose own sub-goals are done does not make it vanish either", () => {
+  // The reported case: the goal ticked was not a leaf, so its whole branch went
+  // finished at once and dropped out, taking the undo with it.
+  const r = inCtx(`${BY_TITLE}
+    addCustomChild(null, "Root", { type: "quest" });
+    const R = byTitle("Root");
+    addCustomChild(R, "Branch", { type: "quest" });
+    const B = byTitle("Branch");
+    addCustomChild(B, "Kid", { type: "quest" });
+    state.done[byTitle("Kid")] = true; // Branch is unlocked, its sub-goal is done
+    addCustomChild(R, "Todo", { type: "quest" });
+    expandSubtree(R, R, getGraph().nodes);
+    render();
+    markDone(B, true);
+    const afterTick = lastNodeBlock[B] === R;
+    const stayedShut = !isExpandedIn(R, B); // and it did not spring open
+    markDone(B, false);
+    return { afterTick, stayedShut, done: !!state.done[B] };
+  `);
+  assert.strictEqual(r.afterTick, true, "the branch just ticked stays in the block");
+  assert.strictEqual(r.stayedShut, true, "without expanding its finished sub-goals");
+  assert.strictEqual(r.done, false, "and it can be unticked");
+});
+
+test("re-opening a goal shrinks the branch that was finished meanwhile", () => {
+  const r = inCtx(`${BY_TITLE}
+    addCustomChild(null, "Root", { type: "quest" });
+    const R = byTitle("Root");
+    addCustomChild(R, "Tick me", { type: "quest" });
+    const T = byTitle("Tick me");
+    addCustomChild(R, "Todo", { type: "quest" });
+    expandSubtree(R, R, getGraph().nodes);
+    render();
+    markDone(T, true);
+    const afterTick = lastNodeBlock[T] === R;
+    toggleCollapse(R); toggleCollapse(R); // close and re-open
+    return { afterTick, afterReopen: lastNodeBlock[T] };
+  `);
+  assert.strictEqual(r.afterTick, true, "it stays while you are looking at it");
+  assert.strictEqual(r.afterReopen, undefined, "and drops out on the next open");
+});
+
+test("the ✓N chip shows the finished sub-goals again, and hides them", () => {
+  const r = inCtx(`${BY_TITLE}
+    addCustomChild(null, "Root", { type: "quest" });
+    const R = byTitle("Root");
+    addCustomChild(R, "Finished", { type: "quest" });
+    const F = byTitle("Finished");
+    addCustomChild(R, "Todo", { type: "quest" });
+    state.done[F] = true;
+    expandSubtree(R, R, getGraph().nodes);
+    render();
+    const hidden = lastNodeBlock[F];
+    revealDoneChildren(R, R, true);
+    const revealed = lastNodeBlock[F] === R;
+    revealDoneChildren(R, R, false);
+    return { hidden, revealed, hiddenAgain: lastNodeBlock[F] };
+  `);
+  assert.strictEqual(r.hidden, undefined, "finished sub-goals start hidden");
+  assert.strictEqual(r.revealed, true, "the chip brings them back");
+  assert.strictEqual(r.hiddenAgain, undefined, "and puts them away again");
+});
+
+console.log("\nBlock layout");
+
+test("a goal's prerequisites sit in the column next to it, whatever their depth", () => {
+  // Regression: columns were measured from the leaves, so a shallow
+  // prerequisite of a goal was flung to the far left of the block, columns away
+  // from the goal it belongs to (and usually off the side of the screen).
+  const r = inCtx(`${BY_TITLE}
+    addCustomChild(null, "Goal", { type: "quest" });
+    const G = byTitle("Goal");
+    addCustomChild(G, "Shallow", { type: "quest" });
+    addCustomChild(G, "Deep", { type: "quest" });
+    let prev = byTitle("Deep");
+    for (let i = 0; i < 4; i++) { // a long chain under Deep
+      addCustomChild(prev, "Chain" + i, { type: "quest" });
+      prev = byTitle("Chain" + i);
+    }
+    expandSubtree(G, G, getGraph().nodes);
+    render();
+    return {
+      goal: lastColumns[G], shallow: lastColumns[byTitle("Shallow")],
+      deep: lastColumns[byTitle("Deep")], tail: lastColumns[byTitle("Chain3")],
+    };
+  `);
+  assert.strictEqual(r.shallow, r.goal - 1, "the shallow prerequisite sits next to its goal");
+  assert.strictEqual(r.deep, r.goal - 1, "so does the deep one");
+  assert.strictEqual(r.tail, 0, "and the longest chain still sets the block width");
+});
+
+test("opening a goal scrolls it back into view", () => {
+  // The bug: a goal's tree grows to the left of it, so opening a big one left
+  // the goal itself off the right edge of the window and it looked like it had
+  // vanished. Only expanding scrolls; collapsing leaves the viewport alone.
+  const r = inCtx(`
+    const scrolled = [];
+    const realQuery = chartEl.querySelector;
+    chartEl.querySelector = sel => ({ scrollIntoView: opts => scrolled.push({ sel, opts }) });
+    addCustomChild(null, "Goal", { type: "quest" });
+    const G = Object.keys(state.customNodes)[0];
+    addCustomChild(G, "Prereq", { type: "quest" });
+    state.collapsed[G] = true;
+    toggleCollapse(G); // open it
+    const onExpand = scrolled.length;
+    const sel = scrolled[0] ? scrolled[0].sel : null;
+    const inline = scrolled[0] ? scrolled[0].opts.inline : null;
+    toggleCollapse(G); // close it again
+    const afterCollapse = scrolled.length;
+    chartEl.querySelector = realQuery;
+    return { onExpand, afterCollapse, matchesGoal: sel === '[data-id="' + G + '"]', inline };
+  `);
+  assert.strictEqual(r.onExpand, 1, "expanding scrolls once");
+  assert.strictEqual(r.matchesGoal, true, "to the goal that was clicked");
+  assert.strictEqual(r.inline, "nearest", "moving the viewport as little as possible");
+  assert.strictEqual(r.afterCollapse, 1, "collapsing does not scroll");
+});
+
+test("a goal shared by two parents stays left of both", () => {
+  const r = inCtx(`${BY_TITLE}
+    addCustomChild(null, "Goal", { type: "quest" });
+    const G = byTitle("Goal");
+    addCustomChild(G, "Near", { type: "quest" });
+    const N = byTitle("Near");
+    addCustomChild(G, "Far", { type: "quest" });
+    addCustomChild(byTitle("Far"), "Deeper", { type: "quest" });
+    const D = byTitle("Deeper");
+    addLinkedChild(N, D); // D now hangs off Near as well
+    expandSubtree(G, G, getGraph().nodes);
+    render();
+    return { near: lastColumns[N], deeper: lastColumns[D], far: lastColumns[byTitle("Far")] };
+  `);
+  assert.ok(r.deeper < r.near, "left of its shallow parent");
+  assert.ok(r.deeper < r.far, "and left of its deep one, so edges only point right");
 });
 
 console.log("\n" + passed + " test(s) passed.");

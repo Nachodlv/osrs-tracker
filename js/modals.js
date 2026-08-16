@@ -450,7 +450,7 @@ function addCustomChild(parentId, title, opts) {
     if (opts.description) state.customNodes[id].description = opts.description;
     state.customNodes[id].linkDisabled = !!opts.linkDisabled;
     writeGoalCosts(id, opts.costs, opts.type || "other");
-    if (parentId) state.collapsed[parentId] = false;
+    if (parentId) expandEverywhere(parentId);
     saveState();
     render();
     resolveAndStoreIconLink(id, true, opts.type || "other", opts.iconQuery || title, opts.linkDisabled ? null : (opts.linkQuery || title));
@@ -583,7 +583,7 @@ function addLinkedChild(parentId, existingId) {
   return withUndo("Linked goal", () => {
     if (isAncestor(existingId, parentId, currentNodes)) return false;
     addToLinkedEdges(parentId, existingId);
-    state.collapsed[parentId] = false;
+    expandEverywhere(parentId);
     saveState();
     render();
     return true;
@@ -617,8 +617,17 @@ searchEl.addEventListener("input", applyFilter);
 
 document.getElementById("expandAll").addEventListener("click", () => {
   const { nodes } = getGraph();
+  // Every goal open in its own block, and open in every block it appears in.
   Object.values(nodes).forEach(n => {
-    if (n.childIds.length > 0) state.collapsed[n.id] = false;
+    if (!n.childIds.length) return;
+    state.collapsed[n.id] = false;
+    Object.keys(state.blockCollapsed).forEach(blockRoot => {
+      state.blockCollapsed[blockRoot][n.id] = false;
+    });
+  });
+  render(); // re-blocks the chart, so newly reachable cards get an entry below
+  Object.keys(lastNodeBlock).forEach(id => {
+    if (nodes[id] && nodes[id].childIds.length) setExpandedIn(lastNodeBlock[id], id, true);
   });
   saveState();
   render();
@@ -626,6 +635,7 @@ document.getElementById("expandAll").addEventListener("click", () => {
 
 document.getElementById("collapseAll").addEventListener("click", () => {
   state.collapsed = {};
+  state.blockCollapsed = {};
   saveState();
   render();
 });

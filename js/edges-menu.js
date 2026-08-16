@@ -79,7 +79,7 @@ function reparentNode(childId, oldParentId, newParentId) {
       addToLinkedEdges(newParentId, childId);
     }
 
-    state.collapsed[newParentId] = false;
+    expandEverywhere(newParentId);
     saveState();
     render();
   });
@@ -149,7 +149,10 @@ function openContextMenu(x, y, node, info) {
   }
 
   if (info.hasChildren) {
-    addItem(isExpandedState(node.id) ? "Collapse" : "Expand", () => toggleCollapse(node.id));
+    // Acts on the card that was right-clicked, so it matches clicking it.
+    const blockRoot = lastNodeBlock[node.id] || node.id;
+    addItem(isExpandedIn(blockRoot, node.id) ? "Collapse" : "Expand",
+      () => toggleCollapse(node.id, blockRoot));
   }
 
   if (info.status === "done") {

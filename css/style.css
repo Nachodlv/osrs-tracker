@@ -1120,6 +1120,29 @@ main#chart {
   white-space: nowrap;
 }
 
+/* Reveals the finished sub-goals a goal's block is holding back. */
+.done-kids-badge {
+  font-size: 0.62rem;
+  line-height: 1;
+  white-space: nowrap;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.done-kids-badge:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.done-kids-badge.showing {
+  border-color: var(--green-dark);
+  color: var(--green);
+}
+
 .graph-node-link {
   font-size: 0.62rem;
   white-space: nowrap;

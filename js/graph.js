@@ -206,20 +206,30 @@ function isAncestor(candidateId, id, nodes, seen) {
   return n.parentIds.some(pid => isAncestor(candidateId, pid, nodes, seen));
 }
 
-// column(node) = 0 for leaves, else 1 + max(column of children).
+// Columns are measured from the goal at the right, not from the leaves at the
+// left: depth(node) = 1 + max(depth of its parents), and column = maxDepth -
+// depth. So a goal's prerequisites all land in the column right next to it.
+// (Measuring from the leaves instead put every node at its own longest chain
+// length, which flung a goal's shallow prerequisites to the far left edge of
+// the block, columns away from the goal they belong to.) Taking the max over
+// parents keeps every child strictly left of all of its parents, so edges still
+// only ever point right. Parents outside this block are ignored.
 function computeColumns(nodes) {
-  const memo = {};
-  function col(id) {
-    if (memo[id] != null) return memo[id];
-    memo[id] = 0; // cycle guard
-    const n = nodes[id];
-    if (!n.childIds.length) { memo[id] = 0; return 0; }
-    const c = 1 + Math.max(...n.childIds.map(col));
-    memo[id] = c;
-    return c;
+  const depth = {};
+  function d(id) {
+    if (depth[id] != null) return depth[id];
+    depth[id] = 0; // cycle guard
+    const parents = (nodes[id].parentIds || []).filter(pid => nodes[pid]);
+    const v = parents.length ? 1 + Math.max(...parents.map(d)) : 0;
+    depth[id] = v;
+    return v;
   }
-  Object.keys(nodes).forEach(col);
-  return memo;
+  const ids = Object.keys(nodes);
+  ids.forEach(d);
+  const maxDepth = Math.max(0, ...ids.map(id => depth[id]));
+  const cols = {};
+  ids.forEach(id => { cols[id] = maxDepth - depth[id]; });
+  return cols;
 }
 
 function effectiveOrder(id, discoveryOrder) {
@@ -243,24 +253,31 @@ function computeRows(nodes, columns, discoveryOrder) {
       columnOrder[c] = ids;
       continue;
     }
-    const desired = {};
+    // desired = the row this node wants, averaged from the children it has in
+    // this block; null when it has none, which is now common (a leaf sits next
+    // to its goal rather than in column 0) and means "no row to line up with".
+    const desired = {}, sortVal = {};
     ids.forEach(id => {
       const childRows = nodes[id].childIds.map(cid => rows[cid]).filter(r => r != null);
       desired[id] = childRows.length
         ? childRows.reduce((a, b) => a + b, 0) / childRows.length
-        : effectiveOrder(id, discoveryOrder);
+        : null;
+      sortVal[id] = desired[id] != null ? desired[id] : effectiveOrder(id, discoveryOrder);
     });
     ids.sort((a, b) => {
       const ma = state.order[a], mb = state.order[b];
-      if (ma != null && mb != null) return ma - mb || desired[a] - desired[b];
-      return desired[a] - desired[b] || effectiveOrder(a, discoveryOrder) - effectiveOrder(b, discoveryOrder);
+      if (ma != null && mb != null) return ma - mb || sortVal[a] - sortVal[b];
+      return sortVal[a] - sortVal[b] || effectiveOrder(a, discoveryOrder) - effectiveOrder(b, discoveryOrder);
     });
     // state.order only decides the sequence (via the sort above); the row
     // number itself still snaps toward the child average so parents stay
     // level with their children instead of packing into bare consecutive rows.
+    // A node with nothing to line up with just takes the next free row: using
+    // its order index as a row number would leave thousands of pixels of blank
+    // block under it.
     let nextRow = 0;
     ids.forEach(id => {
-      const r = Math.max(nextRow, Math.round(desired[id]));
+      const r = desired[id] == null ? nextRow : Math.max(nextRow, Math.round(desired[id]));
       rows[id] = r;
       nextRow = r + 1;
     });
@@ -275,23 +292,43 @@ function isExpandedState(id) {
   return state.collapsed[id] === false;
 }
 
-// A node is visible if it's a root or has at least one visible, expanded parent.
-// `rootLike` ids are shown at top level regardless of parents (tier-group
-// members keep their group slot even after being linked as a child elsewhere,
-// so they render in both places).
-function computeVisibility(nodes, rootLike) {
-  const vis = {};
-  function isVis(id) {
-    if (vis[id] != null) return vis[id];
-    vis[id] = true; // cycle guard
-    const n = nodes[id];
-    if (!n.parentIds.length || (rootLike && rootLike.has(id))) { vis[id] = true; return true; }
-    const v = n.parentIds.some(pid => isVis(pid) && isExpandedState(pid));
-    vis[id] = v;
-    return v;
+// A goal can render in two places at once: its own block (as a top-level goal
+// or a tier-group member) and again as a prerequisite card inside some other
+// goal's block. Same node, but not the same card, so expansion is tracked per
+// block. `state.collapsed[id]` owns a goal's OWN block; `state.blockCollapsed[
+// blockRoot][id]` owns its card inside blockRoot's block. Same convention in
+// both: === false means explicitly expanded, anything else is collapsed.
+function isExpandedIn(blockRoot, id) {
+  if (!blockRoot || id === blockRoot) return isExpandedState(id);
+  const b = state.blockCollapsed[blockRoot];
+  return !!b && b[id] === false;
+}
+
+function setExpandedIn(blockRoot, id, expanded) {
+  if (!blockRoot || id === blockRoot) {
+    state.collapsed[id] = !expanded;
+    return;
   }
-  Object.keys(nodes).forEach(isVis);
-  return vis;
+  if (!state.blockCollapsed[blockRoot]) state.blockCollapsed[blockRoot] = {};
+  state.blockCollapsed[blockRoot][id] = !expanded;
+}
+
+// Expand a goal wherever it is currently on screen: its own block, plus the
+// block it last rendered inside. Used after an edit that adds or moves a
+// sub-goal under it, so the new sub-goal is actually visible afterwards.
+function expandEverywhere(id) {
+  setExpandedIn(null, id, true);
+  const block = lastNodeBlock[id];
+  if (block && block !== id) setExpandedIn(block, id, true);
+}
+
+// Which nodes render is no longer a global question: a goal can be open in one
+// block and shut in another, so each block decides for itself as renderRoot
+// walks it (see isExpandedIn). What is still global is which goals are on the
+// chart in their own right — parentless, or holding a tier-group slot.
+function isChartRoot(id, nodes, groupedIds) {
+  const n = nodes[id];
+  return !!n && (!n.parentIds.length || (groupedIds && groupedIds.has(id)));
 }
 
 // --- Status model ------------------------------------------------------------
@@ -316,6 +353,28 @@ function isUnlocked(id, nodes, statusMemo) {
   const n = nodes[id];
   if (!n.childIds.length) return true;
   return n.childIds.every(cid => computeStatus(cid, nodes, statusMemo) === "done");
+}
+
+// True when a goal and everything it depends on are ticked off. A finished
+// branch is dropped from its parent's block and skipped when expanding, so a
+// long chain shrinks as it gets completed. This is stricter than state.done:
+// a goal ticked before one of its sub-goals was added still has work left.
+function isSubtreeDone(id, nodes, memo) {
+  memo = memo || {};
+  if (memo[id] != null) return memo[id];
+  memo[id] = true; // cycle guard
+  const n = nodes[id];
+  const r = !!state.done[id] && (n ? n.childIds : []).every(cid => isSubtreeDone(cid, nodes, memo));
+  memo[id] = r;
+  return r;
+}
+
+// Whether a goal is worth opening on its own: it has a sub-goal with work left.
+// One whose sub-goals are all finished is left collapsed by the expand cascade
+// (its block would hold nothing but finished work) until it is clicked open.
+function hasUnfinishedChild(id, nodes, memo) {
+  const n = nodes[id];
+  return !!n && n.childIds.some(cid => !isSubtreeDone(cid, nodes, memo));
 }
 
 function progressOf(id, nodes, memo) {

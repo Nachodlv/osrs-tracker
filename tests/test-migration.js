@@ -103,6 +103,31 @@ test("remaps every reference in done/inProgress/order/collapsed", () => {
   assert.strictEqual(migrated.collapsed["gear.twisted-bow"], false);
 });
 
+test("remaps both key levels of blockCollapsed", () => {
+  // { blockRootId: { nodeId: collapsed } } — a goal's expansion inside another
+  // goal's block. Both levels are node ids, so an id rename has to reach both.
+  const save = makeTuuxSoloSave();
+  save.blockCollapsed = {
+    "gear-progression.tier52.twisted-bow": {
+      "gear-progression.tier5.piety": false,
+      "gear-progression.tier0.rune-pouch": true
+    }
+  };
+  const m = migrateStateData(save);
+  assert.deepStrictEqual(Object.keys(m.blockCollapsed), ["gear.twisted-bow"], "outer key remapped");
+  assert.deepStrictEqual(m.blockCollapsed["gear.twisted-bow"], {
+    "gear.piety": false,
+    "gear.rune-pouch": true
+  }, "inner keys remapped, values kept");
+  // Idempotent: running it again on already-migrated data changes nothing.
+  assert.deepStrictEqual(migrateStateData(m).blockCollapsed, m.blockCollapsed);
+});
+
+test("a save with no blockCollapsed survives migration untouched", () => {
+  const m = migrateStateData(makeTuuxSoloSave());
+  assert.strictEqual(m.blockCollapsed, undefined, "nothing invented for old saves");
+});
+
 test("remaps customNodes[*].parentId, leaves unrenamed ids alone", () => {
   const migrated = migrateStateData(makeTuuxSoloSave());
   assert.strictEqual(migrated.customNodes["custom-1"].parentId, "gear.amulet-of-strength");
