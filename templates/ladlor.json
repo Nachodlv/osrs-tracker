@@ -1,8 +1,8 @@
 {
   "name": "Ironman Ladlord Chart",
   "source": "https://ladlorchart.com",
-  "version": 4,
-  "generatedAt": "2026-08-05T14:13:50.401Z",
+  "version": 5,
+  "generatedAt": "2026-09-28T12:57:10.518Z",
   "goalData": [
     {
       "id": "mixed-hide-boots",
@@ -1075,6 +1075,14 @@
       "icon": "Elidinis'_ward.png",
       "link": "https://oldschool.runescape.wiki/w/Elidinis'_ward",
       "children": []
+    },
+    {
+      "id": "gear.proselyte-cuisse",
+      "title": "Proselyte cuisse",
+      "type": "other",
+      "icon": "9676.png",
+      "link": "https://oldschool.runescape.wiki/w/proselyte_cuisse",
+      "children": []
     }
   ],
   "gearGroups": [
@@ -1102,7 +1110,8 @@
       "gear.helm-of-neitiznot",
       "gear.barrows-gloves",
       "gear.gem-bag",
-      "gear.herb-sack"
+      "gear.herb-sack",
+      "gear.proselyte-cuisse"
     ],
     [
       "gear.dragon-defender",

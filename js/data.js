@@ -509,7 +509,8 @@ var GOAL_DATA = [
   { id: "gear.elidinis-ward", title: "Elidinis' ward", type: "item", icon: "Elidinis'_ward.png", link: "https://oldschool.runescape.wiki/w/Elidinis'_ward", children: [] },
   { id: "gear.saturated-heart", title: "Saturated heart", type: "item", icon: "Saturated_heart.png", link: "https://oldschool.runescape.wiki/w/Saturated_heart", children: [] },
   { id: "gear.zaryte-crossbow", title: "Zaryte crossbow", type: "item", icon: "Zaryte_crossbow.png", link: "https://oldschool.runescape.wiki/w/Zaryte_crossbow", children: [] },
-  { id: "gear.zaryte-vambraces", title: "Zaryte vambraces", type: "item", icon: "Zaryte_vambraces.png", link: "https://oldschool.runescape.wiki/w/Zaryte_vambraces", children: [] }
+  { id: "gear.zaryte-vambraces", title: "Zaryte vambraces", type: "item", icon: "Zaryte_vambraces.png", link: "https://oldschool.runescape.wiki/w/Zaryte_vambraces", children: [] },
+  { id: "gear.proselyte-cuisse", title: "Proselyte cuisse", type: "other", icon: "9676.png", link: "https://oldschool.runescape.wiki/w/proselyte_cuisse", children: [] }
 ];
 
 // Per-type emoji fallback, generic wiki icon, and label.
@@ -663,7 +664,7 @@ var GEAR_GROUPS = [
   ["gear.iban-s-staff-u", "gear.protect-from-melee", "gear.ancient-staff", "gear.eagle-eye"],
   ["gear.fighter-torso", "gear.granite-body"],
   ["gear.dragon-scimitar", "gear.dragon-dagger", "gear.berserker-ring-i"],
-  ["gear.helm-of-neitiznot", "gear.barrows-gloves", "gear.gem-bag", "gear.herb-sack"],
+  ["gear.helm-of-neitiznot", "gear.barrows-gloves", "gear.gem-bag", "gear.herb-sack", "gear.proselyte-cuisse"],
   ["gear.dragon-defender", "gear.book-of-the-dead", "gear.salve-amulet-ei", "gear.piety"],
   ["gear.mixed-hide-cape", "mixed-hide-boots"],
   ["gear.ava-s-accumulator", "imbued-zamorak-cape"],
