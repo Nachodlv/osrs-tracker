@@ -1,8 +1,8 @@
 {
   "name": "Ironman Ladlord Chart",
   "source": "https://ladlorchart.com",
-  "version": 4,
-  "generatedAt": "2026-08-05T14:13:50.401Z",
+  "version": 5,
+  "generatedAt": "2026-09-28T20:34:38.147Z",
   "goalData": [
     {
       "id": "mixed-hide-boots",
@@ -146,6 +146,14 @@
       "type": "item",
       "icon": "Barrows_gloves.png",
       "link": "https://oldschool.runescape.wiki/w/Barrows_gloves",
+      "children": []
+    },
+    {
+      "id": "gear.proselyte-cuisse",
+      "title": "Proselyte cuisse",
+      "type": "item",
+      "icon": "Proselyte_cuisse.png",
+      "link": "https://oldschool.runescape.wiki/w/Proselyte_cuisse",
       "children": []
     },
     {
@@ -1101,6 +1109,7 @@
     [
       "gear.helm-of-neitiznot",
       "gear.barrows-gloves",
+      "gear.proselyte-cuisse",
       "gear.gem-bag",
       "gear.herb-sack"
     ],

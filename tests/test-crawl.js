@@ -211,6 +211,32 @@ const idMapOf = (...ids) => new Map(ids.map(id => [canonId(id), id]));
     "goalFromMember: level requirement -> type skill");
 }
 
+// 10b. Repo-JSON members: no explicit type, numeric item-id icon under
+//      /item_icons/. Becomes an item with a wiki-style icon and capitalised link.
+{
+  const g = goalFromMember({ slug: "proselyte-cuisse", title: "Proselyte cuisse",
+    wiki: "https://oldschool.runescape.wiki/w/proselyte_cuisse", icon: "/images/item_icons/9676.png", type: "" });
+  assert(g.type === "item", "goalFromMember: /item_icons/ -> type item");
+  assert(g.icon === "Proselyte_cuisse.png", "goalFromMember: numeric icon -> wiki <Title>.png");
+  assert(g.link === "https://oldschool.runescape.wiki/w/Proselyte_cuisse", "goalFromMember: link page capitalised");
+  const s = goalFromMember({ slug: "broader-fletching", title: "Broader Fletching", wiki: "w",
+    icon: "/images/slayer_icons/Broader_Fletching.webp", type: "slayer" });
+  assert(s.type === "other" && s.icon === "Broader_Fletching.webp", "goalFromMember: named non-item icon kept");
+}
+
+// 10c. Upstream retitles ("Dark altar" for "Dark altar (Construction)") fold onto
+//      the existing data.js id, so the tier shows no drift and nothing to review.
+{
+  assert(canonId("dark-altar") === canonId("gear.dark-altar-construction"), "canonId: dark altar alias");
+  assert(canonId("spirit-tree") === canonId("spirit-tree-construction"), "canonId: spirit tree alias");
+  const { driftLines, plan } = classifyGroups(
+    idMapOf("gear.dark-altar-construction", "gear.rejuvenation-pool"),
+    [[member("dark-altar"), member("rejuvenation-pool")]],
+    [dataGroup("gear.dark-altar-construction", "gear.rejuvenation-pool")]
+  );
+  assert(!driftLines.length && !plan.reviewLines.length && !plan.goals.length, "alias: retitle is not drift");
+}
+
 // 11. retypeItems flips only gear.* "other" entries whose title is an ownable item
 //     (case/punctuation-insensitive), leaving prayers ("other") and skills untouched.
 {

@@ -239,9 +239,17 @@ async function fetchSourceTitleMap() {
 // fang") while the live map uses the bare slug ("osmumtens-fang"); the two also
 // encode possessives differently ("-s-" vs "s"). Strip the namespace and every
 // non-alphanumeric char so both collapse to the same key and possessive/hyphen
-// differences stop showing up as false drift.
+// differences stop showing up as false drift. CANON_ALIASES folds upstream
+// retitles of an existing goal onto its data.js key, so a pure title change is
+// not reported as a removal plus a new goal.
+const CANON_ALIASES = {
+  darkaltar: "darkaltarconstruction",
+  fairyring: "fairyringconstruction",
+  spirittree: "spirittreeconstruction"
+};
 function canonId(id) {
-  return String(id).split(".").pop().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const c = String(id).split(".").pop().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return CANON_ALIASES[c] || c;
 }
 
 function collectIds(nodes, set) {
@@ -318,20 +326,35 @@ async function fetchLiveGroups() {
 
 // A classified live member ({ slug, title, wiki, icon, type, canon }) mapped to
 // what a data.js goal needs. type mirrors data.js: skill-level requirements
-// ("69-slayer") are "skill"; ownable gear (source metadata type "item") becomes
-// "item" so an uploaded bank memory can auto-complete it; everything else (prayers,
-// spells, construction/slayer unlocks) stays "other". icon is the wiki image
-// filename (data.js stores just the basename), link is the full wiki url.
+// ("69-slayer") are "skill"; ownable gear (see isItemMember) becomes "item" so an
+// uploaded bank memory can auto-complete it; everything else (prayers, spells,
+// slayer unlocks) stays "other". icon is the wiki image filename (data.js stores
+// just the basename); the source's numeric item-id images ("9676.png") are not
+// wiki files, so those fall back to the wiki's "<Title>.png". link is the full
+// wiki url with the page name capitalised like the rest of data.js.
 function goalFromMember(m) {
   const slug = m.slug;
-  const type = /^\d+-/.test(slug) ? "skill" : (m.type === "item" ? "item" : "other");
+  const type = /^\d+-/.test(slug) ? "skill" : (isItemMember(m) ? "item" : "other");
+  let icon = m.icon ? decodeURIComponent(m.icon.split("/").pop()) : "";
+  if (/^\d+\.\w+$/.test(icon)) icon = wikiPageName(m.title) + ".png";
   return {
     id: "gear." + slug,
     title: m.title,
     type: type,
-    icon: m.icon ? decodeURIComponent(m.icon.split("/").pop()) : "",
-    link: m.wiki
+    icon: icon,
+    link: (m.wiki || "").replace(/\/w\/(.)/, (_, c) => "/w/" + c.toUpperCase())
   };
+}
+
+// The source dropped its explicit "item" type; item icons now live under
+// /item_icons/, which is the remaining ownable-item signal.
+function isItemMember(m) {
+  return m.type === "item" || /\/item_icons\//.test(m.icon || "");
+}
+
+function wikiPageName(title) {
+  const t = String(title).trim().replace(/\s+/g, "_");
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 // Greedily pair each live group with the data.js group it shares the most
