@@ -510,7 +510,8 @@ var GOAL_DATA = [
   { id: "gear.elidinis-ward", title: "Elidinis' ward", type: "item", icon: "Elidinis'_ward.png", link: "https://oldschool.runescape.wiki/w/Elidinis'_ward", children: [] },
   { id: "gear.saturated-heart", title: "Saturated heart", type: "item", icon: "Saturated_heart.png", link: "https://oldschool.runescape.wiki/w/Saturated_heart", children: [] },
   { id: "gear.zaryte-crossbow", title: "Zaryte crossbow", type: "item", icon: "Zaryte_crossbow.png", link: "https://oldschool.runescape.wiki/w/Zaryte_crossbow", children: [] },
-  { id: "gear.zaryte-vambraces", title: "Zaryte vambraces", type: "item", icon: "Zaryte_vambraces.png", link: "https://oldschool.runescape.wiki/w/Zaryte_vambraces", children: [] }
+  { id: "gear.zaryte-vambraces", title: "Zaryte vambraces", type: "item", icon: "Zaryte_vambraces.png", link: "https://oldschool.runescape.wiki/w/Zaryte_vambraces", children: [] },
+  { id: "gear.hallowfell", title: "Hallowfell", type: "item", icon: "Hallowfell.png", link: "https://oldschool.runescape.wiki/w/Hallowfell", children: [] }
 ];
 
 // Per-type emoji fallback, generic wiki icon, and label.
@@ -675,7 +676,7 @@ var GEAR_GROUPS = [
   ["gear.arkan-blade"],
   ["gear.black-mask-i", "gear.bonecrusher"],
   ["gear.pharaoh-s-sceptre"],
-  ["gear.arclight", "gear.broader-fletching", "gear.slayer-helmet-i", "gear.ice-barrage", "gear.bigger-and-badder", "gear.ash-sanctifier"],
+  ["gear.arclight", "gear.broader-fletching", "gear.slayer-helmet-i", "gear.ice-barrage", "gear.bigger-and-badder", "gear.ash-sanctifier", "gear.hallowfell"],
   ["gear.69-slayer", "gear.86-strength"],
   ["gear.karamja-gloves-3"],
   ["gear.amulet-of-glory"],

@@ -1,8 +1,8 @@
 {
   "name": "Ironman Ladlord Chart",
   "source": "https://ladlorchart.com",
-  "version": 5,
-  "generatedAt": "2026-09-28T20:34:38.147Z",
+  "version": 6,
+  "generatedAt": "2026-11-23T17:25:44.507Z",
   "goalData": [
     {
       "id": "mixed-hide-boots",
@@ -1083,6 +1083,14 @@
       "icon": "Elidinis'_ward.png",
       "link": "https://oldschool.runescape.wiki/w/Elidinis'_ward",
       "children": []
+    },
+    {
+      "id": "gear.hallowfell",
+      "title": "Hallowfell",
+      "type": "item",
+      "icon": "Hallowfell.png",
+      "link": "https://oldschool.runescape.wiki/w/Hallowfell",
+      "children": []
     }
   ],
   "gearGroups": [
@@ -1158,7 +1166,8 @@
       "gear.slayer-helmet-i",
       "gear.ice-barrage",
       "gear.bigger-and-badder",
-      "gear.ash-sanctifier"
+      "gear.ash-sanctifier",
+      "gear.hallowfell"
     ],
     [
       "gear.69-slayer",
